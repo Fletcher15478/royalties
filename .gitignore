@@ -24,6 +24,11 @@
 .DS_Store
 *.pem
 
+# generated exports (keep local)
+net-sales-*.txt
+square-ytd-*-weekly.tsv
+square-ytd-*-weekly.json
+
 # debug
 npm-debug.log*
 yarn-debug.log*

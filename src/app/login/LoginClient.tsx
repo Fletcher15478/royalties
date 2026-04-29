@@ -37,8 +37,8 @@ export function LoginClient() {
     <main className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center px-6 py-16">
       <div className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
         <div className="flex items-center gap-3">
-          <div className="relative h-12 w-12">
-            <Image src="/millies-cone.svg" alt="Millie's cone" fill priority />
+          <div className="relative h-14 w-[2.75rem] shrink-0">
+            <Image src="/images/cone pink.svg" alt="Millie's cone" fill priority className="object-contain" />
           </div>
           <div>
             <h1 className="text-xl font-semibold tracking-tight text-zinc-900">Sign in</h1>

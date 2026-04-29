@@ -21,7 +21,9 @@ function parseRecipients(): string[] {
 export async function GET(req: Request) {
   const { CRON_SECRET } = requireCronEnv();
   const url = new URL(req.url);
-  const provided = url.searchParams.get("secret") ?? req.headers.get("x-cron-secret") ?? "";
+  const auth = req.headers.get("authorization") ?? "";
+  const bearer = auth.toLowerCase().startsWith("bearer ") ? auth.slice(7).trim() : "";
+  const provided = url.searchParams.get("secret") ?? req.headers.get("x-cron-secret") ?? bearer ?? "";
   if (provided !== CRON_SECRET) {
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }

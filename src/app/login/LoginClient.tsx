@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
 
 export function LoginClient() {
@@ -35,8 +36,15 @@ export function LoginClient() {
   return (
     <main className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center px-6 py-16">
       <div className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
-        <h1 className="text-xl font-semibold tracking-tight text-zinc-900">Sign in</h1>
-        <p className="mt-1 text-sm text-zinc-600">Admin access to the royalties dashboard.</p>
+        <div className="flex items-center gap-3">
+          <div className="relative h-12 w-12">
+            <Image src="/millies-cone.svg" alt="Millie's cone" fill priority />
+          </div>
+          <div>
+            <h1 className="text-xl font-semibold tracking-tight text-zinc-900">Sign in</h1>
+            <p className="mt-0.5 text-sm text-zinc-600">Admin access to the royalties dashboard.</p>
+          </div>
+        </div>
 
         <form className="mt-6 flex flex-col gap-3" onSubmit={onSubmit}>
           <label className="text-sm font-medium text-zinc-800">

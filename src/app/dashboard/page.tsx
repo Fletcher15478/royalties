@@ -10,6 +10,8 @@ import { getSquareClient } from "@/lib/square/client";
 import { MILLIES_LOCATIONS } from "@/lib/locations/millies";
 import { computeRoyalties } from "@/lib/royalties/calc";
 import { getLocationWeeklyDetail } from "@/lib/square/locationDetail";
+import { readSessionFromCookies } from "@/lib/auth/session";
+import { displayNameForEmail } from "@/lib/auth/displayName";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,6 +25,8 @@ export default async function DashboardPage({
 }: {
   searchParams?: { week?: string };
 }) {
+  const session = await readSessionFromCookies();
+  const displayName = displayNameForEmail(session?.email);
   const anchor = parseWeekParam(searchParams?.week) ?? new Date();
   const range = getWeekRangeMondayToMondayInTimeZone(anchor, "America/New_York");
   const weekParam = formatWeekParam(range.weekStart);
@@ -91,7 +95,9 @@ export default async function DashboardPage({
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight text-zinc-900">Millie’s Royalties</h1>
-          <p className="text-sm text-zinc-700">Monday 12:00am → Sunday 11:59pm (reporting week)</p>
+          <p className="text-sm text-zinc-700">
+            {displayName ? `Welcome ${displayName}. ` : ""}Monday 12:00am → Sunday 11:59pm (reporting week)
+          </p>
         </div>
         <div className="flex flex-col gap-3 sm:items-end">
           <div className="flex flex-wrap gap-2">

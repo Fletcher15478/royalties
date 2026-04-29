@@ -19,7 +19,19 @@ export async function POST(req: Request) {
   }
 
   const email = parsed.data.email.toLowerCase();
-  const user = await getUserByEmail(email);
+  let user;
+  try {
+    user = await getUserByEmail(email);
+  } catch (e: any) {
+    const type = String(e?.name ?? e?.__type ?? "");
+    if (type.includes("ResourceNotFoundException")) {
+      return NextResponse.json(
+        { ok: false, error: "Server misconfigured: DynamoDB table not found (check DDB_REGION + DDB_USERS_TABLE)." },
+        { status: 500 }
+      );
+    }
+    return NextResponse.json({ ok: false, error: "Server error" }, { status: 500 });
+  }
   if (!user) {
     return NextResponse.json({ ok: false, error: "Invalid credentials" }, { status: 401 });
   }

@@ -6,8 +6,8 @@
 import type { GiftCardPriorMonthReconciliation } from "@/lib/reports/types";
 
 const GC_NONE = {
-  activated: 0,
   sold: 0,
+  activated: 0,
   redeemed: 0,
 } as const;
 
@@ -23,8 +23,8 @@ export type OfficialBackfillRow = {
   totalSales: number;
   collected: number;
   giftCardActivity: {
-    activated: number;
     sold: number;
+    activated: number;
     redeemed: number;
     commission?: number;
     loadFees?: number;

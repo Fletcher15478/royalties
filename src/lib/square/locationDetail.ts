@@ -133,11 +133,14 @@ function tenderCollectedCents(tender: any): number {
 }
 
 export type GiftCardActivitySummary = {
-  activated: number; // money loaded onto a new gift card
-  sold: number; // alias of activated for now (Square semantics vary)
+  /** Square Sales Summary → Deferred sales → Gift card sales (completed gift-card line totals). Donations can be activated but $0 sold. */
+  sold: number;
+  /** Gift Card Activity report → Activations (+ loads from activities API); can exceed sold when value is gifted without POS sale */
+  activated: number;
   redeemed: number;
-  // placeholders (Square doesn’t expose “commission/load fees” directly in all setups)
+  /** 5% franchise commission — base is sold, not activated (per Millie’s finance). */
   commission?: number;
+  /** Approx. Square load fee (2.5% of activated from activities — aligns Gift Card Activity “Load Fees” when activations tie to loads). */
   loadFees?: number;
 };
 
@@ -228,10 +231,10 @@ async function giftCardMetricsForClosedRange(
   locationId: string,
   startAt: string,
   endAt: string
-): Promise<{ giftCardSalesCents: number; giftCardRedeemedCents: number }> {
+): Promise<{ soldCents: number; activatedCents: number; redeemedCents: number }> {
   const square = getSquareClient();
 
-  let giftCardSalesCents = 0;
+  let giftCardSoldFromOrdersCents = 0;
   let giftCardRedeemedCents = 0;
   let giftCardActivatedFromActivitiesCents = 0;
   let giftCardRedeemedFromActivitiesCents = 0;
@@ -308,7 +311,7 @@ async function giftCardMetricsForClosedRange(
         if (hasOnlyNoSaleTender) continue;
       }
 
-      giftCardSalesCents += gcSale;
+      giftCardSoldFromOrdersCents += gcSale;
 
       const tenders: any[] = o?.tenders ?? [];
       for (const ten of tenders) {
@@ -358,9 +361,12 @@ async function giftCardMetricsForClosedRange(
     // ignore
   }
 
-  const activatedCents = Math.max(giftCardSalesCents, giftCardActivatedFromActivitiesCents);
   const redeemedCents = Math.max(giftCardRedeemedCents, giftCardRedeemedFromActivitiesCents);
-  return { giftCardSalesCents: activatedCents, giftCardRedeemedCents: redeemedCents };
+  return {
+    soldCents: giftCardSoldFromOrdersCents,
+    activatedCents: giftCardActivatedFromActivitiesCents,
+    redeemedCents,
+  };
 }
 
 async function giftCardCalendarMonthForWeekMonday(
@@ -378,21 +384,25 @@ async function giftCardCalendarMonthForWeekMonday(
   const startAt = toIsoNoMillis(monthStart);
   const endAt = toIsoNoMillis(monthEnd);
 
-  const { giftCardSalesCents: activatedCents, giftCardRedeemedCents: redeemedCents } =
-    await giftCardMetricsForClosedRange(locationId, startAt, endAt);
+  const { soldCents, activatedCents, redeemedCents } = await giftCardMetricsForClosedRange(
+    locationId,
+    startAt,
+    endAt
+  );
 
-  const commissionCents = Math.round(activatedCents * 0.05);
+  const commissionCents = Math.round(soldCents * 0.05);
   const loadFeesCents = Math.round(activatedCents * 0.025);
 
   const activity: GiftCardActivitySummary = {
+    sold: centsToDollars(soldCents),
     activated: centsToDollars(activatedCents),
-    sold: centsToDollars(activatedCents),
     redeemed: centsToDollars(redeemedCents),
     commission: centsToDollars(commissionCents),
     loadFees: centsToDollars(loadFeesCents),
   };
 
   const show =
+    soldCents !== 0 ||
     activatedCents !== 0 ||
     redeemedCents !== 0 ||
     commissionCents !== 0 ||
@@ -453,7 +463,7 @@ export async function getLocationWeeklyDetail(
 
   let deliveryGrossCents = 0;
   let deliveryDiscountCents = 0;
-  let giftCardSalesCents = 0;
+  let giftCardSoldFromOrdersCents = 0;
   let giftCardRedeemedCents = 0;
   let giftCardActivatedFromActivitiesCents = 0;
   let giftCardRedeemedFromActivitiesCents = 0;
@@ -788,7 +798,7 @@ export async function getLocationWeeklyDetail(
 
       // Gift card sales (loads): count non-eGift Card GIFT_CARD line items.
       // We already exclude external delivery orders, and we exclude “eGift” by name above.
-      giftCardSalesCents += gcSale;
+      giftCardSoldFromOrdersCents += gcSale;
 
       // Gift card redemption (tender) — counts how much gift card value was used to pay.
       const tenders: any[] = o?.tenders ?? [];
@@ -902,23 +912,25 @@ export async function getLocationWeeklyDetail(
 
   const deliveryNetCents = Math.max(0, deliveryGrossCents - deliveryDiscountCents);
 
-  // Gift card activity:
-  // - Activated/Sold: gift card sales (loads)
-  // - Redeemed: gift card tender used
-  const activatedCents = Math.max(giftCardSalesCents, giftCardActivatedFromActivitiesCents);
+  // Gift card semantics (Square):
+  // - Sold = Deferred sales gift card line totals from Orders (≠ activated when e.g. $0 donations loads value)
+  // - Activated = Gift Card Activities (LOAD / ACTIVATE)
+  // - Redeemed = max(tenders, REDEEM activities)
+  const soldCents = giftCardSoldFromOrdersCents;
+  const activatedCents = giftCardActivatedFromActivitiesCents;
   const redeemedCents = Math.max(giftCardRedeemedCents, giftCardRedeemedFromActivitiesCents);
 
-  // Align Gift Card Sales to "Deferred sales" in Square report
-  giftCardSalesCents = activatedCents;
+  // Deferred sales component in Total Sales matches Sales Summary "Gift card sales"
+  const giftCardDeferredSalesCents = soldCents;
 
   // Square “Total Sales”:
   // - If the period has returns, the official report already nets them into Net Sales/Tax/Tips, and does NOT
   //   subtract refunds again.
   // - Otherwise (no returns), subtract refunds.
   const totalSalesCents =
-    netSalesCents + taxCents + tipCents + giftCardSalesCents - (returnsCents > 0 ? 0 : refundCents);
+    netSalesCents + taxCents + tipCents + giftCardDeferredSalesCents - (returnsCents > 0 ? 0 : refundCents);
 
-  const commissionCents = Math.round(activatedCents * 0.05);
+  const commissionCents = Math.round(soldCents * 0.05);
   const loadFeesCents = Math.round(activatedCents * 0.025);
   // Square “Collected” includes cash tendered before change; we compute it from tenders above.
   // Commission/load fees are reported separately in your layout, but not added to collected.
@@ -940,7 +952,7 @@ export async function getLocationWeeklyDetail(
     netSales: centsToDollars(netSalesCents),
     tax: centsToDollars(taxCents),
     tips: centsToDollars(tipCents),
-    giftCardSales: centsToDollars(giftCardSalesCents),
+    giftCardSales: centsToDollars(giftCardDeferredSalesCents),
     totalSales: centsToDollars(totalSalesCents),
     collected: centsToDollars(collectedCents),
     ...(locationId === LAWRENCEVILLE_LOCATION_ID
@@ -999,8 +1011,8 @@ export async function getLocationWeeklyDetail(
       netSales: centsToDollars(deliveryNetCents),
     },
     giftCardActivity: {
+      sold: centsToDollars(soldCents),
       activated: centsToDollars(activatedCents),
-      sold: centsToDollars(activatedCents),
       redeemed: centsToDollars(redeemedCents),
       commission: centsToDollars(commissionCents),
       loadFees: centsToDollars(loadFeesCents),

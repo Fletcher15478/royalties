@@ -185,13 +185,16 @@ export async function buildWeeklyTextReport(params: { weekStartYmd: string; time
 
       if (showGc) {
         lines.push(`Gift Card Activity This Week:`);
-        if (gc?.activated) {
-          lines.push(`  Activated: ${money(gc.activated)}`);
-          lines.push(`  Sold: ${money(gc.sold)}`);
-          if (gc.commission != null) lines.push(`  Commission: ${money(gc.commission)}`);
-          if (gc.loadFees != null) lines.push(`  Load Fees: ${money(gc.loadFees)}`);
+        // Square Sales Summary: Deferred sales (“sold”) + Gift card redeemed; Gift Card Activity: activations & load fees
+        if ((gc?.sold ?? 0) !== 0) lines.push(`  Sold (Deferred sales): ${money(gc.sold)}`);
+        if ((gc?.activated ?? 0) !== 0) lines.push(`  Activated (GC activity report): ${money(gc.activated)}`);
+        if ((gc?.redeemed ?? 0) !== 0) lines.push(`  Redeemed: ${money(gc.redeemed)}`);
+        if ((gc?.sold ?? 0) !== 0 && gc.commission != null) {
+          lines.push(`  Commission (on Sold): ${money(gc.commission)}`);
         }
-        if (gc?.redeemed) lines.push(`  Redeemed: ${money(gc.redeemed)}`);
+        if ((gc?.activated ?? 0) !== 0 && gc.loadFees != null) {
+          lines.push(`  Load Fees (~2.5% of Activated): ${money(gc.loadFees)}`);
+        }
         lines.push("");
       }
 
@@ -199,13 +202,15 @@ export async function buildWeeklyTextReport(params: { weekStartYmd: string; time
       if (gcMonth) {
         const gm = gcMonth.activity;
         lines.push(`${gcMonth.monthLabel} Gift Card Activity:`);
-        if (gm?.activated) {
-          lines.push(`  Activated: ${money(gm.activated)}`);
-          lines.push(`  Sold: ${money(gm.sold)}`);
-          if (gm.commission != null) lines.push(`  Commission: ${money(gm.commission)}`);
-          if (gm.loadFees != null) lines.push(`  Load Fees: ${money(gm.loadFees)}`);
+        if ((gm?.sold ?? 0) !== 0) lines.push(`  Sold (Deferred sales): ${money(gm.sold)}`);
+        if ((gm?.activated ?? 0) !== 0) lines.push(`  Activated (GC activity report): ${money(gm.activated)}`);
+        if ((gm?.redeemed ?? 0) !== 0) lines.push(`  Redeemed: ${money(gm.redeemed)}`);
+        if ((gm?.sold ?? 0) !== 0 && gm.commission != null) {
+          lines.push(`  Commission (on Sold): ${money(gm.commission)}`);
         }
-        if (gm?.redeemed) lines.push(`  Redeemed: ${money(gm.redeemed)}`);
+        if ((gm?.activated ?? 0) !== 0 && gm.loadFees != null) {
+          lines.push(`  Load Fees (~2.5% of Activated): ${money(gm.loadFees)}`);
+        }
         lines.push("");
       }
 

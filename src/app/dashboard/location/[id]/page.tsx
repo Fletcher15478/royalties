@@ -153,20 +153,34 @@ export default async function LocationDashboardPage({
         </div>
         <div className="grid grid-cols-1 gap-0 sm:grid-cols-3">
           <div className="p-5 sm:border-r sm:border-zinc-200">
-            <div className="text-xs font-medium text-zinc-600">Activated</div>
-            <div className="mt-1 text-lg font-semibold text-zinc-900">{dollars(detail.giftCardActivity.activated)}</div>
+            <div className="text-xs font-medium text-zinc-600">Sold (Deferred sales)</div>
+            <div className="mt-1 text-lg font-semibold text-zinc-900">{dollars(detail.giftCardActivity.sold)}</div>
           </div>
           <div className="p-5 sm:border-r sm:border-zinc-200">
-            <div className="text-xs font-medium text-zinc-600">Sold</div>
-            <div className="mt-1 text-lg font-semibold text-zinc-900">{dollars(detail.giftCardActivity.sold)}</div>
+            <div className="text-xs font-medium text-zinc-600">Activated</div>
+            <div className="mt-1 text-lg font-semibold text-zinc-900">{dollars(detail.giftCardActivity.activated)}</div>
           </div>
           <div className="p-5">
             <div className="text-xs font-medium text-zinc-600">Redeemed</div>
             <div className="mt-1 text-lg font-semibold text-zinc-900">{dollars(detail.giftCardActivity.redeemed)}</div>
           </div>
         </div>
+        <div className="grid grid-cols-1 gap-0 border-t border-zinc-200 sm:grid-cols-2">
+          <div className="p-5 sm:border-r sm:border-zinc-200">
+            <div className="text-xs font-medium text-zinc-600">Commission (on sold)</div>
+            <div className="mt-1 text-lg font-semibold text-zinc-900">
+              {detail.giftCardActivity.commission != null ? dollars(detail.giftCardActivity.commission) : "—"}
+            </div>
+          </div>
+          <div className="p-5">
+            <div className="text-xs font-medium text-zinc-600">Load fees (~2.5% of activated)</div>
+            <div className="mt-1 text-lg font-semibold text-zinc-900">
+              {detail.giftCardActivity.loadFees != null ? dollars(detail.giftCardActivity.loadFees) : "—"}
+            </div>
+          </div>
+        </div>
         <div className="border-t border-zinc-200 px-5 py-3 text-xs text-zinc-600">
-          Commission / load fees can vary by program and aren’t always exposed via API; we can add them if Square reports provide a field we can map.
+          Activated can differ from sold (e.g. donations that load balance but ring as $0). Commission follows sold; load fees approximate Square’s Gift Card Activity report (2.5% of activated).
         </div>
       </div>
 

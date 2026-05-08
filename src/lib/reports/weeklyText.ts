@@ -30,6 +30,7 @@ function entityDisplayName(entity: string) {
   if (entity === "HHT Frozen Holdings LLC") return "HHT Holdings";
   if (entity === "JACO Builders LLC") return "JACO Builders";
   if (entity === "ICETeen Corp") return "Teen";
+  if (entity === "Happy Penguin, LLC") return "Happy Penguin";
   return entity;
 }
 
@@ -191,6 +192,20 @@ export async function buildWeeklyTextReport(params: { weekStartYmd: string; time
           if (gc.loadFees != null) lines.push(`  Load Fees: ${money(gc.loadFees)}`);
         }
         if (gc?.redeemed) lines.push(`  Redeemed: ${money(gc.redeemed)}`);
+        lines.push("");
+      }
+
+      const gcMonth = r.d.giftCardCalendarMonth;
+      if (gcMonth) {
+        const gm = gcMonth.activity;
+        lines.push(`${gcMonth.monthLabel} Gift Card Activity:`);
+        if (gm?.activated) {
+          lines.push(`  Activated: ${money(gm.activated)}`);
+          lines.push(`  Sold: ${money(gm.sold)}`);
+          if (gm.commission != null) lines.push(`  Commission: ${money(gm.commission)}`);
+          if (gm.loadFees != null) lines.push(`  Load Fees: ${money(gm.loadFees)}`);
+        }
+        if (gm?.redeemed) lines.push(`  Redeemed: ${money(gm.redeemed)}`);
         lines.push("");
       }
 

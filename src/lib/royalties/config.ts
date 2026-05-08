@@ -30,7 +30,7 @@ export const ROYALTY_CONFIG_BY_LOCATION_ID: Record<string, RoyaltyConfig> = {
   LNS0D59DSEW9J: { owner: "Blair & Michelle Sharpe", entity: "Sandy Spoons LLC", royaltyRate: 0.05, techFee: 250 }, // San Marco
 
   // Sami & Kasey Toivola — Happy Penguin, LLC
-  L9WPKVJZFGZS4: { owner: "Sami & Kasey Toivola", entity: "Happy Penguin, LLC", royaltyRate: 0.055, techFee: 250 }, // Lubbock
+  L9WPKVJZFGZS4: { owner: "Sami & Kasey Toivola", entity: "Happy Penguin, LLC", royaltyRate: 0.05, techFee: 250 }, // Lubbock
 
   // HHT Frozen Holdings LLC
   LF70VBZ7CDMHE: { owner: "HHT Frozen Holdings LLC", entity: "HHT Frozen Holdings LLC", royaltyRate: 0.05, techFee: 250 }, // Murrysville

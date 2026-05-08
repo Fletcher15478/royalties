@@ -1,5 +1,5 @@
 import { format } from "date-fns";
-import { formatInTimeZone } from "date-fns-tz";
+import { formatInTimeZone, fromZonedTime } from "date-fns-tz";
 import { getSquareClient } from "@/lib/square/client";
 import { getWeekRangeMondayToMondayInTimeZone, toIsoNoMillis, type WeekRange } from "@/lib/dates/weekRange";
 import type { GiftCardPriorMonthReconciliation } from "@/lib/reports/types";
@@ -215,7 +215,191 @@ export type LocationWeeklyDetail = {
 
   /** When present, matches the official printed prior-month gift card reconciliation block */
   giftCardPriorMonthReconciliation?: GiftCardPriorMonthReconciliation;
+
+  /** Full calendar month (ET) that contains the report week — same shape as weekly gift card activity */
+  giftCardCalendarMonth?: { monthLabel: string; activity: GiftCardActivitySummary };
 };
+
+/**
+ * Gift-card loads + redemptions for [startAt, endAt) using the same order inclusion rules as
+ * `getLocationWeeklyDetail` (delivery / marketplace / Square Online exclusions, etc.).
+ */
+async function giftCardMetricsForClosedRange(
+  locationId: string,
+  startAt: string,
+  endAt: string
+): Promise<{ giftCardSalesCents: number; giftCardRedeemedCents: number }> {
+  const square = getSquareClient();
+
+  let giftCardSalesCents = 0;
+  let giftCardRedeemedCents = 0;
+  let giftCardActivatedFromActivitiesCents = 0;
+  let giftCardRedeemedFromActivitiesCents = 0;
+
+  let cursor: string | undefined;
+  do {
+    const res = await square.orders.search({
+      locationIds: [locationId],
+      cursor,
+      limit: 100,
+      query: {
+        filter: {
+          dateTimeFilter: {
+            closedAt: { startAt, endAt },
+          },
+          stateFilter: { states: ["COMPLETED"] },
+        },
+        sort: { sortField: "CLOSED_AT", sortOrder: "ASC" },
+      },
+      returnEntries: false,
+    });
+
+    const orders: any[] = (res as any)?.data?.orders ?? (res as any)?.orders ?? (res as any)?.result?.orders ?? [];
+    for (const o of orders) {
+      const isLawrenceville = locationId === LAWRENCEVILLE_LOCATION_ID;
+
+      const returnsAll: any[] = o?.returns ?? [];
+      let excludedAllReturnsForThisOrder = returnsAll.length > 0;
+      for (const ret of returnsAll) {
+        let sourceOrderExcluded = false;
+        const sourceOrderId = String(ret?.sourceOrderId ?? "");
+        if (sourceOrderId) {
+          try {
+            const srcRes = await square.orders.get({ orderId: sourceOrderId } as any);
+            const srcOrder =
+              (srcRes as any)?.data?.order ?? (srcRes as any)?.order ?? (srcRes as any)?.result?.order ?? null;
+            if (srcOrder) sourceOrderExcluded = shouldExcludeReturnSourceOrder(srcOrder, locationId);
+          } catch {
+            // ignore
+          }
+        }
+        if (sourceOrderExcluded) continue;
+        excludedAllReturnsForThisOrder = false;
+      }
+
+      const excluded =
+        isDeliveryOrder(o) || looksLikeExternalDelivery(o);
+      const excluded2 = looksLikeDeliveryOrOnlineByContent(o);
+      const excluded3 = shouldExcludeSquareOnlineOrder(o, locationId);
+
+      const lineItems: any[] = o?.lineItems ?? [];
+      const giftCardLineItems = lineItems.filter((li) => {
+        const itemType = String(li?.itemType ?? "").toUpperCase();
+        if (itemType === "GIFT_CARD") return true;
+        const name = String(li?.name ?? "").toLowerCase();
+        if (name.includes("gift card")) return true;
+        return false;
+      });
+      const regularLineItems = lineItems.filter((li) => !giftCardLineItems.includes(li));
+      const gcSale = giftCardLineItems.reduce((sum, li) => sum + moneyToCents(li?.grossSalesMoney), 0);
+
+      if (excluded || excluded2 || excluded3) continue;
+
+      if (!isLawrenceville) {
+        if (!isPaidOrder(o, locationId)) continue;
+      }
+
+      const tendersForKind: any[] = o?.tenders ?? [];
+      const hasOnlyNoSaleTender =
+        tendersForKind.length > 0 &&
+        tendersForKind.every((ten) => String(ten?.type ?? "").toUpperCase() === "NO_SALE") &&
+        tendersForKind.reduce((s, ten) => s + tenderCollectedCents(ten), 0) === 0;
+      if (!isLawrenceville) {
+        if (hasOnlyNoSaleTender) continue;
+      }
+
+      giftCardSalesCents += gcSale;
+
+      const tenders: any[] = o?.tenders ?? [];
+      for (const ten of tenders) {
+        const tt = String(ten?.type ?? "").toUpperCase();
+        if (tt.includes("GIFT_CARD")) {
+          giftCardRedeemedCents += moneyToCents(ten?.amountMoney);
+        }
+      }
+    }
+
+    cursor = (res as any)?.data?.cursor ?? (res as any)?.cursor ?? (res as any)?.result?.cursor;
+  } while (cursor);
+
+  try {
+    let activityCursor: string | undefined;
+    do {
+      const actRes = await square.giftCards.activities.list({
+        locationId,
+        beginTime: startAt,
+        endTime: endAt,
+        cursor: activityCursor,
+        limit: 100,
+        sortOrder: "ASC",
+      } as any);
+
+      const acts: any[] =
+        (actRes as any)?.data?.giftCardActivities ??
+        (actRes as any)?.giftCardActivities ??
+        (actRes as any)?.result?.giftCardActivities ??
+        [];
+
+      for (const a of acts) {
+        const type = String(a?.type ?? "").toUpperCase();
+        if (type === "ACTIVATE" || type === "LOAD") {
+          giftCardActivatedFromActivitiesCents +=
+            moneyToCents(a?.activateActivityDetails?.amountMoney) ||
+            moneyToCents(a?.loadActivityDetails?.amountMoney);
+        } else if (type === "REDEEM") {
+          giftCardRedeemedFromActivitiesCents += moneyToCents(a?.redeemActivityDetails?.amountMoney);
+        }
+      }
+
+      activityCursor =
+        (actRes as any)?.data?.cursor ?? (actRes as any)?.cursor ?? (actRes as any)?.result?.cursor;
+    } while (activityCursor);
+  } catch {
+    // ignore
+  }
+
+  const activatedCents = Math.max(giftCardSalesCents, giftCardActivatedFromActivitiesCents);
+  const redeemedCents = Math.max(giftCardRedeemedCents, giftCardRedeemedFromActivitiesCents);
+  return { giftCardSalesCents: activatedCents, giftCardRedeemedCents: redeemedCents };
+}
+
+async function giftCardCalendarMonthForWeekMonday(
+  locationId: string,
+  weekMondayYmdEt: string,
+  windowTz: string
+): Promise<{ monthLabel: string; activity: GiftCardActivitySummary } | undefined> {
+  const [y, mo, da] = weekMondayYmdEt.split("-").map(Number);
+  const anchor = fromZonedTime(new Date(y, mo - 1, da, 12, 0, 0), windowTz);
+  const Y = Number(formatInTimeZone(anchor, windowTz, "yyyy"));
+  const M = Number(formatInTimeZone(anchor, windowTz, "M"));
+  const monthLabel = formatInTimeZone(anchor, windowTz, "MMMM");
+  const monthStart = fromZonedTime(new Date(Y, M - 1, 1, 0, 0, 0), windowTz);
+  const monthEnd = fromZonedTime(new Date(Y, M, 1, 0, 0, 0), windowTz);
+  const startAt = toIsoNoMillis(monthStart);
+  const endAt = toIsoNoMillis(monthEnd);
+
+  const { giftCardSalesCents: activatedCents, giftCardRedeemedCents: redeemedCents } =
+    await giftCardMetricsForClosedRange(locationId, startAt, endAt);
+
+  const commissionCents = Math.round(activatedCents * 0.05);
+  const loadFeesCents = Math.round(activatedCents * 0.025);
+
+  const activity: GiftCardActivitySummary = {
+    activated: centsToDollars(activatedCents),
+    sold: centsToDollars(activatedCents),
+    redeemed: centsToDollars(redeemedCents),
+    commission: centsToDollars(commissionCents),
+    loadFees: centsToDollars(loadFeesCents),
+  };
+
+  const show =
+    activatedCents !== 0 ||
+    redeemedCents !== 0 ||
+    commissionCents !== 0 ||
+    loadFeesCents !== 0;
+  if (!show) return undefined;
+  return { monthLabel, activity };
+}
 
 export async function getLocationWeeklyDetail(
   locationId: string,
@@ -234,6 +418,7 @@ export async function getLocationWeeklyDetail(
   const official = OFFICIAL_WEEK_BACKFILL[weekMondayYmdEt]?.[locationId];
   if (official && !opts?.forceSquare) {
     const weekNextMondayYmdEt = formatInTimeZone(effectiveRange.weekEnd, windowTz, "yyyy-MM-dd");
+    const giftCardCalendarMonth = await giftCardCalendarMonthForWeekMonday(locationId, weekMondayYmdEt, windowTz);
     return {
       locationId,
       weekStart: weekMondayYmdEt,
@@ -251,6 +436,7 @@ export async function getLocationWeeklyDetail(
       delivery: { grossSales: 0, discounts: 0, refunds: 0, netSales: 0 },
       giftCardActivity: official.giftCardActivity,
       giftCardPriorMonthReconciliation: official.giftCardPriorMonthReconciliation,
+      giftCardCalendarMonth,
     };
   }
   const startAt = toIsoNoMillis(effectiveRange.weekStart);
@@ -740,6 +926,8 @@ export async function getLocationWeeklyDetail(
   // Adjust for refunds so "Total payments collected" matches Square (net of refunds).
   collectedCents = Math.max(0, collectedCents - refundCents);
 
+  const giftCardCalendarMonth = await giftCardCalendarMonthForWeekMonday(locationId, weekMondayYmdEt, windowTz);
+
   // 3) Gift card activity (activated/redeemed)
   return {
     locationId,
@@ -817,6 +1005,7 @@ export async function getLocationWeeklyDetail(
       commission: centsToDollars(commissionCents),
       loadFees: centsToDollars(loadFeesCents),
     },
+    giftCardCalendarMonth,
   };
 }
 

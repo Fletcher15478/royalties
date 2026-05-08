@@ -1,11 +1,12 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { addDays, format } from "date-fns";
-import { DashboardControls } from "@/components/DashboardControls";
+import { addDays } from "date-fns";
+import { DashboardWeekNav } from "@/components/DashboardWeekNav";
 import {
   formatWeekParam,
   getWeekRangeMondayToMondayInTimeZone,
   parseWeekParam,
+  weekLabelFromMondayYmd,
 } from "@/lib/dates/weekRange";
 import { getSquareClient } from "@/lib/square/client";
 import { MILLIES_LOCATIONS } from "@/lib/locations/millies";
@@ -59,10 +60,7 @@ export default async function LocationDashboardPage({
     weekEndYmd: detail.weekEnd,
     techFeeCadence: "monthly",
   });
-  const weekLabel = `${format(new Date(`${detail.weekStart}T12:00:00.000Z`), "MMM d")} – ${format(
-    addDays(new Date(`${detail.weekEnd}T12:00:00.000Z`), -1),
-    "MMM d, yyyy"
-  )}`;
+  const weekLabel = weekLabelFromMondayYmd(weekParam);
 
   return (
     <main className="mx-auto w-full max-w-4xl px-4 py-8">
@@ -80,26 +78,13 @@ export default async function LocationDashboardPage({
             <p className="mt-1 text-sm text-zinc-700">Not configured for royalties yet</p>
           )}
         </div>
-        <div className="flex flex-col gap-2 sm:items-end">
-          <div className="flex gap-2">
-            <Link
-              className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm font-medium hover:bg-zinc-50"
-              href={`/dashboard/location/${params.id}?week=${prevWeekParam}`}
-            >
-              ← Prev week
-            </Link>
-            <Link
-              className="rounded-lg bg-[var(--brand)] px-3 py-2 text-sm font-semibold text-white hover:opacity-95"
-              href={`/dashboard/location/${params.id}?week=${nextWeekParam}`}
-            >
-              Next week →
-            </Link>
-          </div>
-          <DashboardControls
-            weekStart={weekParam}
-            weekLabel={weekLabel}
-          />
-        </div>
+        <DashboardWeekNav
+          basePath={`/dashboard/location/${params.id}`}
+          weekParam={weekParam}
+          prevWeekParam={prevWeekParam}
+          nextWeekParam={nextWeekParam}
+          weekLabel={weekLabel}
+        />
       </div>
 
       <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2">

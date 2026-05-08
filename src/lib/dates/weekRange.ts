@@ -57,3 +57,11 @@ export function parseWeekParam(week?: string | null): Date | null {
   return Number.isNaN(anchor.getTime()) ? null : anchor;
 }
 
+/** Human-readable Mon–Sun label for a Monday `yyyy-MM-dd` (matches dashboard copy). */
+export function weekLabelFromMondayYmd(mondayYmd: string): string {
+  const weekStart = new Date(`${mondayYmd}T12:00:00.000Z`);
+  const weekEndExclusive = addDays(weekStart, 7);
+  const lastDay = addDays(weekEndExclusive, -1);
+  return `${format(weekStart, "MMM d")} – ${format(lastDay, "MMM d, yyyy")}`;
+}
+

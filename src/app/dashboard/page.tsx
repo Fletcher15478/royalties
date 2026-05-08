@@ -1,10 +1,11 @@
 import Link from "next/link";
-import { addDays, format } from "date-fns";
-import { DashboardControls } from "@/components/DashboardControls";
+import { addDays } from "date-fns";
+import { DashboardWeekNav } from "@/components/DashboardWeekNav";
 import {
   formatWeekParam,
   getWeekRangeMondayToMondayInTimeZone,
   parseWeekParam,
+  weekLabelFromMondayYmd,
 } from "@/lib/dates/weekRange";
 import { getSquareClient } from "@/lib/square/client";
 import { MILLIES_LOCATIONS } from "@/lib/locations/millies";
@@ -87,7 +88,7 @@ export default async function DashboardPage({
     0
   );
 
-  const weekLabel = `${format(range.weekStart, "MMM d")} – ${format(addDays(range.weekEnd, -1), "MMM d, yyyy")}`;
+  const weekLabel = weekLabelFromMondayYmd(weekParam);
 
   return (
     <main className="mx-auto w-full max-w-6xl px-4 py-10">
@@ -99,32 +100,14 @@ export default async function DashboardPage({
             {displayName ? `Welcome ${displayName}. ` : ""}Monday 12:00am → Sunday 11:59pm (reporting week)
           </p>
         </div>
-        <div className="flex flex-col gap-3 sm:items-end">
-          <div className="flex flex-wrap gap-2">
-            <Link
-              className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm font-medium hover:bg-zinc-50"
-              href={`/dashboard?week=${prevWeekParam}`}
-            >
-              ← Prev week
-            </Link>
-            <Link
-              className="rounded-lg bg-[var(--brand)] px-3 py-2 text-sm font-semibold text-white hover:opacity-95"
-              href={`/dashboard?week=${nextWeekParam}`}
-            >
-              Next week →
-            </Link>
-            <a
-              className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm font-semibold text-zinc-900 hover:bg-zinc-50"
-              href={`/api/reports/weekly?week=${weekParam}`}
-            >
-              Download this week&apos;s report
-            </a>
-          </div>
-          <DashboardControls
-            weekStart={weekParam}
-            weekLabel={weekLabel}
-          />
-        </div>
+        <DashboardWeekNav
+          basePath="/dashboard"
+          weekParam={weekParam}
+          prevWeekParam={prevWeekParam}
+          nextWeekParam={nextWeekParam}
+          weekLabel={weekLabel}
+          showWeeklyDownload
+        />
         </div>
       </div>
 

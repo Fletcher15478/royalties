@@ -180,7 +180,7 @@ export default async function LocationDashboardPage({
           </div>
         </div>
         <div className="border-t border-zinc-200 px-5 py-3 text-xs text-zinc-600">
-          Activated can differ from sold (e.g. donations that load balance but ring as $0). Commission follows sold; load fees approximate Square’s Gift Card Activity report (2.5% of activated).
+          Activated can differ from sold (e.g. donations). Commission is 5% of sold; load fee is 2.5% of sold (HQ gift-card workbook).
         </div>
       </div>
 

@@ -1,8 +1,9 @@
-import { format } from "date-fns";
+import { addDays, format } from "date-fns";
 import { formatInTimeZone, fromZonedTime } from "date-fns-tz";
 import { getSquareClient } from "@/lib/square/client";
 import { getWeekRangeMondayToMondayInTimeZone, toIsoNoMillis, type WeekRange } from "@/lib/dates/weekRange";
 import type { GiftCardPriorMonthReconciliation } from "@/lib/reports/types";
+import { buildGiftCardWorkbookReconciliation } from "@/lib/reports/gcWorkbook";
 import { OFFICIAL_WEEK_BACKFILL } from "@/lib/reports/officialWeeklyBackfillData";
 
 type Money = { amount?: bigint | number | null } | null | undefined;
@@ -140,7 +141,7 @@ export type GiftCardActivitySummary = {
   redeemed: number;
   /** 5% franchise commission — base is sold, not activated (per Millie’s finance). */
   commission?: number;
-  /** Approx. Square load fee (2.5% of activated from activities — aligns Gift Card Activity “Load Fees” when activations tie to loads). */
+  /** Workbook: 2.5% of **Sold** (same base as commission). */
   loadFees?: number;
 };
 
@@ -391,14 +392,14 @@ async function giftCardCalendarMonthForWeekMonday(
   );
 
   const commissionCents = Math.round(soldCents * 0.05);
-  const loadFeesCents = Math.round(activatedCents * 0.025);
+  const loadFeesCents = soldCents > 0 ? Math.round(soldCents * 0.025) : 0;
 
   const activity: GiftCardActivitySummary = {
     sold: centsToDollars(soldCents),
     activated: centsToDollars(activatedCents),
     redeemed: centsToDollars(redeemedCents),
     commission: centsToDollars(commissionCents),
-    loadFees: centsToDollars(loadFeesCents),
+    loadFees: soldCents > 0 ? centsToDollars(loadFeesCents) : undefined,
   };
 
   const show =
@@ -409,6 +410,41 @@ async function giftCardCalendarMonthForWeekMonday(
     loadFeesCents !== 0;
   if (!show) return undefined;
   return { monthLabel, activity };
+}
+
+/** Full calendar month in ET immediately before the calendar month of the week’s Sunday (workbook “prior month” GC). */
+function getPriorGcReconciliationEtRange(weekMondayUtc: Date, windowTz: string) {
+  const weekSundayUtc = addDays(weekMondayUtc, 6);
+  const y = Number(formatInTimeZone(weekSundayUtc, windowTz, "yyyy"));
+  const m = Number(formatInTimeZone(weekSundayUtc, windowTz, "M"));
+  let pm = m - 1;
+  let py = y;
+  if (pm < 1) {
+    pm = 12;
+    py -= 1;
+  }
+  const monthLabel = formatInTimeZone(
+    fromZonedTime(new Date(py, pm - 1, 15, 12, 0, 0), windowTz),
+    windowTz,
+    "MMMM"
+  );
+  const monthStart = fromZonedTime(new Date(py, pm - 1, 1, 0, 0, 0), windowTz);
+  const monthEnd = fromZonedTime(new Date(py, pm, 1, 0, 0, 0), windowTz);
+  return { monthLabel, startAt: toIsoNoMillis(monthStart), endAt: toIsoNoMillis(monthEnd) };
+}
+
+async function giftCardPriorMonthReconciliationForWeek(
+  locationId: string,
+  weekMondayUtc: Date,
+  windowTz: string
+): Promise<GiftCardPriorMonthReconciliation | undefined> {
+  const { monthLabel, startAt, endAt } = getPriorGcReconciliationEtRange(weekMondayUtc, windowTz);
+  const { soldCents, activatedCents, redeemedCents } = await giftCardMetricsForClosedRange(
+    locationId,
+    startAt,
+    endAt
+  );
+  return buildGiftCardWorkbookReconciliation({ monthLabel, soldCents, activatedCents, redeemedCents });
 }
 
 export async function getLocationWeeklyDetail(
@@ -429,6 +465,9 @@ export async function getLocationWeeklyDetail(
   if (official && !opts?.forceSquare) {
     const weekNextMondayYmdEt = formatInTimeZone(effectiveRange.weekEnd, windowTz, "yyyy-MM-dd");
     const giftCardCalendarMonth = await giftCardCalendarMonthForWeekMonday(locationId, weekMondayYmdEt, windowTz);
+    const giftCardPriorMonthReconciliation =
+      official.giftCardPriorMonthReconciliation ??
+      (await giftCardPriorMonthReconciliationForWeek(locationId, effectiveRange.weekStart, windowTz));
     return {
       locationId,
       weekStart: weekMondayYmdEt,
@@ -445,7 +484,7 @@ export async function getLocationWeeklyDetail(
       collected: official.collected,
       delivery: { grossSales: 0, discounts: 0, refunds: 0, netSales: 0 },
       giftCardActivity: official.giftCardActivity,
-      giftCardPriorMonthReconciliation: official.giftCardPriorMonthReconciliation,
+      giftCardPriorMonthReconciliation,
       giftCardCalendarMonth,
     };
   }
@@ -931,7 +970,7 @@ export async function getLocationWeeklyDetail(
     netSalesCents + taxCents + tipCents + giftCardDeferredSalesCents - (returnsCents > 0 ? 0 : refundCents);
 
   const commissionCents = Math.round(soldCents * 0.05);
-  const loadFeesCents = Math.round(activatedCents * 0.025);
+  const loadFeesCents = soldCents > 0 ? Math.round(soldCents * 0.025) : 0;
   // Square “Collected” includes cash tendered before change; we compute it from tenders above.
   // Commission/load fees are reported separately in your layout, but not added to collected.
   //
@@ -939,6 +978,11 @@ export async function getLocationWeeklyDetail(
   collectedCents = Math.max(0, collectedCents - refundCents);
 
   const giftCardCalendarMonth = await giftCardCalendarMonthForWeekMonday(locationId, weekMondayYmdEt, windowTz);
+  const giftCardPriorMonthReconciliation = await giftCardPriorMonthReconciliationForWeek(
+    locationId,
+    effectiveRange.weekStart,
+    windowTz
+  );
 
   // 3) Gift card activity (activated/redeemed)
   return {
@@ -1015,9 +1059,10 @@ export async function getLocationWeeklyDetail(
       activated: centsToDollars(activatedCents),
       redeemed: centsToDollars(redeemedCents),
       commission: centsToDollars(commissionCents),
-      loadFees: centsToDollars(loadFeesCents),
+      loadFees: soldCents > 0 ? centsToDollars(loadFeesCents) : undefined,
     },
     giftCardCalendarMonth,
+    giftCardPriorMonthReconciliation,
   };
 }
 

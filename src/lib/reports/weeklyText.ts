@@ -192,14 +192,17 @@ export async function buildWeeklyTextReport(params: { weekStartYmd: string; time
         if ((gc?.sold ?? 0) !== 0 && gc.commission != null) {
           lines.push(`  Commission (on Sold): ${money(gc.commission)}`);
         }
-        if ((gc?.activated ?? 0) !== 0 && gc.loadFees != null) {
-          lines.push(`  Load Fees (~2.5% of Activated): ${money(gc.loadFees)}`);
+        if ((gc?.sold ?? 0) !== 0 && gc.loadFees != null) {
+          lines.push(`  Load Fees (2.5% of Sold, workbook): ${money(gc.loadFees)}`);
         }
         lines.push("");
       }
 
       const gcMonth = r.d.giftCardCalendarMonth;
-      if (gcMonth) {
+      const recon = r.d.giftCardPriorMonthReconciliation;
+      const skipCalendarDup =
+        gcMonth && recon && gcMonth.monthLabel === recon.monthLabel;
+      if (gcMonth && !skipCalendarDup) {
         const gm = gcMonth.activity;
         lines.push(`${gcMonth.monthLabel} Gift Card Activity:`);
         if ((gm?.sold ?? 0) !== 0) lines.push(`  Sold (Deferred sales): ${money(gm.sold)}`);
@@ -208,14 +211,14 @@ export async function buildWeeklyTextReport(params: { weekStartYmd: string; time
         if ((gm?.sold ?? 0) !== 0 && gm.commission != null) {
           lines.push(`  Commission (on Sold): ${money(gm.commission)}`);
         }
-        if ((gm?.activated ?? 0) !== 0 && gm.loadFees != null) {
-          lines.push(`  Load Fees (~2.5% of Activated): ${money(gm.loadFees)}`);
+        if ((gm?.sold ?? 0) !== 0 && gm.loadFees != null) {
+          lines.push(`  Load Fees (2.5% of Sold, workbook): ${money(gm.loadFees)}`);
         }
         lines.push("");
       }
 
-      if (r.d.giftCardPriorMonthReconciliation) {
-        for (const L of priorMonthGcReconciliationLines(r.d.giftCardPriorMonthReconciliation)) {
+      if (recon) {
+        for (const L of priorMonthGcReconciliationLines(recon)) {
           lines.push(L);
         }
         lines.push("");

@@ -6,6 +6,9 @@ import { MILLIES_LOCATIONS } from "@/lib/locations/millies";
 import { getWeekRangeMondayToMondayInTimeZone, type WeekRange } from "@/lib/dates/weekRange";
 import { ROYALTY_CONFIG_BY_LOCATION_ID } from "@/lib/royalties/config";
 import type { GiftCardPriorMonthReconciliation } from "@/lib/reports/types";
+import { syncDeliveryRoyaltiesForLocation } from "@/lib/square/delivery/service";
+import type { DeliveryRoyaltyRecord } from "@/lib/square/delivery/types";
+import { formatDeliveryReportSummary, formatLocationDeliverySection } from "@/lib/reports/deliveryText";
 
 function money(n: number) {
   return n.toLocaleString(undefined, { style: "currency", currency: "USD" });
@@ -132,6 +135,9 @@ export async function buildWeeklyTextReport(params: { weekStartYmd: string; time
   const deliveryLine = `Note: Royalties on delivery services are waived for Nov 01 … ${deliveryWaiverEndsLabelEt(weekMondayYmdEt, tz, range)}.`;
 
   const lines: string[] = [];
+  const allDeliveryRecords: DeliveryRoyaltyRecord[] = [];
+  const locationNames = new Map(includedLocations.map((l) => [l.id, l.name]));
+
   lines.push(`Calculating royalties for period:`);
   lines.push(`  Start: ${startLabel}`);
   lines.push(`  End: ${endLabel}`);
@@ -224,6 +230,29 @@ export async function buildWeeklyTextReport(params: { weekStartYmd: string; time
         lines.push("");
       }
 
+      let deliveryRecords: DeliveryRoyaltyRecord[] = [];
+      try {
+        const { records } = await syncDeliveryRoyaltiesForLocation({
+          locationId: r.loc.id,
+          range,
+          timeZone: tz,
+        });
+        deliveryRecords = records;
+        allDeliveryRecords.push(...records);
+      } catch {
+        lines.push(`Third-Party Delivery (This Week):`);
+        lines.push(`  (Unable to load delivery data from Square for this location.)`);
+        lines.push("");
+      }
+
+      const deliveryLines = formatLocationDeliverySection(deliveryRecords);
+      if (deliveryLines.length > 0) {
+        for (const L of deliveryLines) {
+          lines.push(L);
+        }
+        lines.push("");
+      }
+
       lines.push(`Square Metrics:`);
       lines.push(`  # Orders: ${r.d.ordersCount.toLocaleString()}`);
       lines.push(`  Gross Sales: ${money(r.d.grossSales)}`);
@@ -239,6 +268,10 @@ export async function buildWeeklyTextReport(params: { weekStartYmd: string; time
       lines.push(`  Collected: ${money(r.d.collected)}`);
       lines.push("");
     }
+  }
+
+  for (const L of formatDeliveryReportSummary(allDeliveryRecords, locationNames)) {
+    lines.push(L);
   }
 
   return lines.join("\n");

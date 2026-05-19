@@ -5,54 +5,15 @@ import { getWeekRangeMondayToMondayInTimeZone, toIsoNoMillis, type WeekRange } f
 import type { GiftCardPriorMonthReconciliation } from "@/lib/reports/types";
 import { buildGiftCardWorkbookReconciliation } from "@/lib/reports/gcWorkbook";
 import { OFFICIAL_WEEK_BACKFILL } from "@/lib/reports/officialWeeklyBackfillData";
-
-type Money = { amount?: bigint | number | null } | null | undefined;
-
-function moneyToCents(m: Money): number {
-  if (!m?.amount) return 0;
-  const a: any = m.amount;
-  return typeof a === "bigint" ? Number(a) : Number(a);
-}
-
-function centsToDollars(cents: number): number {
-  return Math.round(cents) / 100;
-}
+import { centsToDollars, moneyToCents } from "@/lib/square/money";
+import {
+  isDeliveryFulfillmentOrder as isDeliveryOrder,
+  looksLikeDeliveryOrOnlineByContent,
+  looksLikeExternalDelivery,
+} from "@/lib/square/delivery/classify";
 
 /** Square location id for Lawrenceville, PA — reconcile to in-dashboard Sales summary (ET week, Items gross). */
 export const LAWRENCEVILLE_LOCATION_ID = "LRVZG0XCQPASB";
-
-function isDeliveryOrder(order: any): boolean {
-  const fulfillments: any[] = order?.fulfillments ?? [];
-  return fulfillments.some((f) => String(f?.type).toUpperCase() === "DELIVERY");
-}
-
-function looksLikeExternalDelivery(order: any): boolean {
-  const src = String(order?.source?.name ?? "").toLowerCase();
-  if (
-    src.includes("doordash") ||
-    src.includes("uber") ||
-    src.includes("grubhub")
-  )
-    return true;
-  const serviceCharges: any[] = order?.serviceCharges ?? [];
-  const scText = serviceCharges.map((s) => String(s?.name ?? "")).join(" ").toLowerCase();
-  if (
-    scText.includes("doordash") ||
-    scText.includes("uber") ||
-    scText.includes("grubhub")
-  )
-    return true;
-  return false;
-}
-
-function looksLikeDeliveryOrOnlineByContent(order: any): boolean {
-  const taxes: any[] = order?.taxes ?? [];
-  const taxText = taxes.map((t) => String(t?.name ?? "")).join(" ").toLowerCase();
-  if (taxText.includes("doordash") || taxText.includes("uber") || taxText.includes("grubhub")) return true;
-  if (taxText.includes("remitted")) return true;
-
-  return false;
-}
 
 function shouldExcludeSquareOnlineOrder(order: any, locationId: string): boolean {
   const src = String(order?.source?.name ?? "").toLowerCase();

@@ -33,6 +33,11 @@ const optionalEnvSchema = z.object({
   DDB_USERS_TABLE: z.string().min(1).optional(),
   // Comma-separated recipient list for weekly email
   REPORT_RECIPIENTS: z.string().min(3).optional(),
+
+  /** Square webhook HMAC key (Developer Dashboard → Webhooks). */
+  SQUARE_WEBHOOK_SIGNATURE_KEY: z.string().min(1).optional(),
+  /** Must match the URL registered with Square exactly (e.g. https://your-app/api/square/webhooks). */
+  SQUARE_WEBHOOK_NOTIFICATION_URL: z.string().url().optional(),
 });
 
 export const env = baseEnvSchema
@@ -58,6 +63,8 @@ export const env = baseEnvSchema
     DDB_REGION: process.env.DDB_REGION,
     DDB_USERS_TABLE: process.env.DDB_USERS_TABLE,
     REPORT_RECIPIENTS: process.env.REPORT_RECIPIENTS,
+    SQUARE_WEBHOOK_SIGNATURE_KEY: process.env.SQUARE_WEBHOOK_SIGNATURE_KEY,
+    SQUARE_WEBHOOK_NOTIFICATION_URL: process.env.SQUARE_WEBHOOK_NOTIFICATION_URL,
   });
 
 export function requireSupabaseEnv() {
@@ -96,6 +103,14 @@ export function requireDdbEnv() {
   const schema = z.object({
     DDB_REGION: z.string().min(1),
     DDB_USERS_TABLE: z.string().min(1),
+  });
+  return schema.parse(env);
+}
+
+export function requireSquareWebhookEnv() {
+  const schema = z.object({
+    SQUARE_WEBHOOK_SIGNATURE_KEY: z.string().min(1),
+    SQUARE_WEBHOOK_NOTIFICATION_URL: z.string().url(),
   });
   return schema.parse(env);
 }

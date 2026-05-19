@@ -18,12 +18,25 @@ export type DeliveryOrderRoyaltyBreakdown = {
   refundsOnOrder: number;
   /** Extra refunds matched via Refunds API + payment_id on tenders. */
   refundsFromPaymentsApi: number;
-  /** Delivery platform fees from service_charges (excluded from royalty base, reported separately). */
-  deliveryFeesExcluded: number;
-  /** gross − returns − marketing − otherDiscounts − refunds (floored at 0). */
+  /** Marketplace / platform fee (DoorDash, Uber, Grubhub commission from service_charges). */
+  platformFee: number;
+  /** gross − returns − marketing − otherDiscounts − refunds − platformFee (floored at 0). */
   netRoyaltyEligible: number;
-  /** Millie's policy: delivery marketplace orders are waived from franchise royalty % but still tracked. */
-  royaltyWaived: boolean;
+};
+
+export type DeliveryWeekTotals = {
+  orderCount: number;
+  grossSales: number;
+  returns: number;
+  marketingDiscounts: number;
+  otherDiscounts: number;
+  refunds: number;
+  platformFees: number;
+  netRoyaltyEligible: number;
+  byPlatform: Record<
+    ThirdPartyDeliveryPlatform,
+    { count: number; netRoyaltyEligible: number; platformFees: number }
+  >;
 };
 
 export type DeliveryLocationSyncSummary = {

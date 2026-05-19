@@ -1,6 +1,7 @@
 import { addDays } from "date-fns";
 import { formatInTimeZone, fromZonedTime } from "date-fns-tz";
 import { ROYALTY_CONFIG_BY_LOCATION_ID } from "@/lib/royalties/config";
+import type { DeliveryWeekTotals } from "@/lib/square/delivery/types";
 
 export type RoyaltyLine = {
   royaltyRate?: number;
@@ -9,6 +10,9 @@ export type RoyaltyLine = {
   royaltyAmount?: number;
   totalDue?: number;
   royaltyBase?: number;
+  inStoreNetSales?: number;
+  deliveryNetSales?: number;
+  delivery?: DeliveryWeekTotals;
   owner?: string;
   entity?: string;
   configured: boolean;
@@ -27,16 +31,23 @@ export function isMonthlyTechFeeAssessedEt(weekMondayYmdEt: string, timeZone = "
 
 export function computeRoyalties(
   locationId: string,
+  /** Combined in-store + third-party delivery net sales (or in-store only if delivery omitted). */
   netSales: number,
-  opts?: { excludeDeliveryNetSales?: number; weekStartYmd?: string; weekEndYmd?: string; techFeeCadence?: "weekly" | "monthly" }
+  opts?: {
+    weekStartYmd?: string;
+    weekEndYmd?: string;
+    techFeeCadence?: "weekly" | "monthly";
+    inStoreNetSales?: number;
+    deliveryNetSales?: number;
+    delivery?: DeliveryWeekTotals;
+  }
 ): RoyaltyLine {
   const cfg = ROYALTY_CONFIG_BY_LOCATION_ID[locationId];
   if (!cfg) {
     return { configured: false };
   }
 
-  const deliveryNet = opts?.excludeDeliveryNetSales ?? 0;
-  const royaltyBase = Math.max(0, netSales - deliveryNet);
+  const royaltyBase = Math.max(0, netSales);
   const royaltyAmount = royaltyBase * cfg.royaltyRate;
 
   const cadence = opts?.techFeeCadence ?? "weekly";
@@ -56,6 +67,9 @@ export function computeRoyalties(
     royaltyAmount,
     totalDue,
     royaltyBase,
+    inStoreNetSales: opts?.inStoreNetSales,
+    deliveryNetSales: opts?.deliveryNetSales,
+    delivery: opts?.delivery,
     owner: cfg.owner,
     entity: cfg.entity,
   };

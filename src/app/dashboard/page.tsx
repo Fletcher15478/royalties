@@ -9,8 +9,7 @@ import {
 } from "@/lib/dates/weekRange";
 import { getSquareClient } from "@/lib/square/client";
 import { MILLIES_LOCATIONS } from "@/lib/locations/millies";
-import { computeRoyalties } from "@/lib/royalties/calc";
-import { getLocationWeeklyDetail } from "@/lib/square/locationDetail";
+import { loadLocationRoyaltyBundle } from "@/lib/royalties/locationBundle";
 import { readSessionFromCookies } from "@/lib/auth/session";
 import { displayNameForEmail } from "@/lib/auth/displayName";
 
@@ -41,52 +40,28 @@ export default async function DashboardPage({
   const includedLocations = MILLIES_LOCATIONS.filter((l) => l.includeInRoyaltiesDashboard !== false);
   const squareById = new Map<string, any>(locations.map((l) => [String(l.id), l]));
   const milliesSquareLocations = includedLocations.map((m) => squareById.get(m.id) ?? { id: m.id, name: m.name, status: "UNKNOWN" });
-  const locationOptions = includedLocations.map((m) => ({ id: m.id, name: m.name }));
-
-  // Avoid hammering Square with a fully-parallel fanout (can cause 429s/timeouts and blank the page).
-  const details: Awaited<ReturnType<typeof getLocationWeeklyDetail>>[] = [];
+  const bundles: Awaited<ReturnType<typeof loadLocationRoyaltyBundle>>[] = [];
   for (const l of includedLocations) {
-    details.push(await getLocationWeeklyDetail(l.id, range, { timeZone: "America/New_York" }));
+    bundles.push(
+      await loadLocationRoyaltyBundle({
+        locationId: l.id,
+        range,
+        timeZone: "America/New_York",
+      })
+    );
   }
 
-  const totalNet = details.reduce((sum, s) => sum + s.netSales, 0);
-  const totalGross = details.reduce((sum, s) => sum + s.grossSales, 0);
-  const totalDiscounts = details.reduce((sum, s) => sum + s.discounts, 0);
-  const totalReturns = details.reduce((sum, s) => sum + s.refunds, 0);
-  const totalOrders = details.reduce((sum, s) => sum + s.ordersCount, 0);
-  const totalRoyalty = details.reduce(
-    (sum, s) =>
-      sum +
-      (computeRoyalties(s.locationId, s.netSales, {
-        excludeDeliveryNetSales: 0,
-        weekStartYmd: s.weekStart,
-        weekEndYmd: s.weekEnd,
-        techFeeCadence: "monthly",
-      }).royaltyAmount ?? 0),
-    0
-  );
-  const totalTechFees = details.reduce(
-    (sum, s) =>
-      sum +
-      (computeRoyalties(s.locationId, s.netSales, {
-        excludeDeliveryNetSales: 0,
-        weekStartYmd: s.weekStart,
-        weekEndYmd: s.weekEnd,
-        techFeeCadence: "monthly",
-      }).techFee ?? 0),
-    0
-  );
-  const totalDue = details.reduce(
-    (sum, s) =>
-      sum +
-      (computeRoyalties(s.locationId, s.netSales, {
-        excludeDeliveryNetSales: 0,
-        weekStartYmd: s.weekStart,
-        weekEndYmd: s.weekEnd,
-        techFeeCadence: "monthly",
-      }).totalDue ?? 0),
-    0
-  );
+  const totalCombinedNet = bundles.reduce((sum, b) => sum + b.combinedNetSales, 0);
+  const totalInStoreNet = bundles.reduce((sum, b) => sum + b.inStoreNetSales, 0);
+  const totalDeliveryNet = bundles.reduce((sum, b) => sum + b.deliveryNetSales, 0);
+  const totalGross = bundles.reduce((sum, b) => sum + b.detail.grossSales, 0);
+  const totalDiscounts = bundles.reduce((sum, b) => sum + b.detail.discounts, 0);
+  const totalReturns = bundles.reduce((sum, b) => sum + b.detail.refunds, 0);
+  const totalOrders = bundles.reduce((sum, b) => sum + b.detail.ordersCount, 0);
+  const totalPlatformFees = bundles.reduce((sum, b) => sum + b.delivery.platformFees, 0);
+  const totalRoyalty = bundles.reduce((sum, b) => sum + (b.royalty.royaltyAmount ?? 0), 0);
+  const totalTechFees = bundles.reduce((sum, b) => sum + (b.royalty.techFee ?? 0), 0);
+  const totalDue = bundles.reduce((sum, b) => sum + (b.royalty.totalDue ?? 0), 0);
 
   const weekLabel = weekLabelFromMondayYmd(weekParam);
 
@@ -120,8 +95,12 @@ export default async function DashboardPage({
           </div>
         </div>
         <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
-          <div className="text-sm font-medium text-zinc-700">Net sales</div>
-          <div className="mt-1 text-2xl font-semibold text-zinc-900">{dollars(totalNet)}</div>
+          <div className="text-sm font-medium text-zinc-700">Combined net sales</div>
+          <div className="mt-1 text-2xl font-semibold text-zinc-900">{dollars(totalCombinedNet)}</div>
+          <div className="mt-2 text-xs text-zinc-600">
+            In-store {dollars(totalInStoreNet)} • Delivery {dollars(totalDeliveryNet)}
+            {totalPlatformFees > 0 ? ` • Platform fees ${dollars(totalPlatformFees)}` : ""}
+          </div>
         </div>
         <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
           <div className="text-sm font-medium text-zinc-700">Discounts</div>
@@ -138,7 +117,7 @@ export default async function DashboardPage({
         <div className="border-b border-zinc-200 px-5 py-4">
           <h2 className="text-sm font-semibold text-zinc-900">Locations</h2>
           <p className="mt-1 text-xs text-zinc-600">
-            Net Sales = Gross − Discounts − Returns. Royalties = Net Sales × rate. Total Due = Royalties + tech fee.
+            Royalties on combined in-store + delivery net. Delivery net deducts platform fees, marketing promos, returns, and refunds.
           </p>
         </div>
         <div className="overflow-x-auto">
@@ -146,33 +125,28 @@ export default async function DashboardPage({
             <thead className="bg-zinc-50 text-left text-zinc-700">
               <tr>
                 <th className="px-5 py-3 font-medium">Location</th>
-                <th className="px-5 py-3 font-medium">Net sales</th>
+                <th className="px-5 py-3 font-medium">Combined net</th>
+                <th className="px-5 py-3 font-medium">Delivery net</th>
                 <th className="px-5 py-3 font-medium">Rate</th>
                 <th className="px-5 py-3 font-medium">Royalty</th>
                 <th className="px-5 py-3 font-medium">Tech fee</th>
                 <th className="px-5 py-3 font-medium">Total due</th>
-                <th className="px-5 py-3 font-medium">Orders</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-200">
-              {details
-                .sort((a, b) => b.netSales - a.netSales)
-                .map((s) => {
-                  const loc = milliesSquareLocations.find((l) => String(l.id) === s.locationId);
-                  const r = computeRoyalties(s.locationId, s.netSales, {
-                    excludeDeliveryNetSales: 0,
-                    weekStartYmd: s.weekStart,
-                    weekEndYmd: s.weekEnd,
-                    techFeeCadence: "monthly",
-                  });
+              {bundles
+                .sort((a, b) => b.combinedNetSales - a.combinedNetSales)
+                .map((b) => {
+                  const loc = milliesSquareLocations.find((l) => String(l.id) === b.detail.locationId);
+                  const r = b.royalty;
                   return (
-                    <tr key={s.locationId} className="hover:bg-zinc-50">
+                    <tr key={b.detail.locationId} className="hover:bg-zinc-50">
                       <td className="px-5 py-3">
                         <Link
                           className="font-semibold text-zinc-900 hover:underline"
-                          href={`/dashboard/location/${s.locationId}?week=${s.weekStart}`}
+                          href={`/dashboard/location/${b.detail.locationId}?week=${b.detail.weekStart}`}
                         >
-                          {loc?.name ?? s.locationId}
+                          {loc?.name ?? b.detail.locationId}
                         </Link>
                         {r.configured ? (
                           <div className="mt-0.5 text-xs text-zinc-600">{r.owner} • {r.entity}</div>
@@ -180,7 +154,20 @@ export default async function DashboardPage({
                           <div className="mt-0.5 text-xs text-zinc-600">Not configured for royalties yet</div>
                         )}
                       </td>
-                      <td className="px-5 py-3 tabular-nums font-medium text-zinc-900">{dollars(s.netSales)}</td>
+                      <td className="px-5 py-3 tabular-nums font-medium text-zinc-900">{dollars(b.combinedNetSales)}</td>
+                      <td className="px-5 py-3 tabular-nums text-zinc-800">
+                        {b.delivery.orderCount > 0 ? (
+                          <>
+                            {dollars(b.deliveryNetSales)}
+                            <div className="mt-0.5 text-[11px] text-zinc-500">
+                              {b.delivery.orderCount} orders
+                              {b.delivery.platformFees > 0 ? ` • fees ${dollars(b.delivery.platformFees)}` : ""}
+                            </div>
+                          </>
+                        ) : (
+                          "—"
+                        )}
+                      </td>
                       <td className="px-5 py-3 tabular-nums text-zinc-800">
                         {r.configured && r.royaltyRate != null ? `${(r.royaltyRate * 100).toFixed(2)}%` : "—"}
                       </td>
@@ -196,7 +183,6 @@ export default async function DashboardPage({
                       <td className="px-5 py-3 tabular-nums font-semibold text-zinc-900">
                         {r.configured && r.totalDue != null ? dollars(r.totalDue) : "—"}
                       </td>
-                      <td className="px-5 py-3 tabular-nums text-zinc-800">{s.ordersCount.toLocaleString()}</td>
                     </tr>
                   );
                 })}

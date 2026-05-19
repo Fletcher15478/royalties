@@ -10,9 +10,8 @@ import {
 } from "@/lib/dates/weekRange";
 import { getSquareClient } from "@/lib/square/client";
 import { MILLIES_LOCATIONS } from "@/lib/locations/millies";
-import { getLocationWeeklySummary } from "@/lib/square/weeklySummary";
-import { computeRoyalties } from "@/lib/royalties/calc";
-import { getLocationWeeklyDetail, LAWRENCEVILLE_LOCATION_ID } from "@/lib/square/locationDetail";
+import { LAWRENCEVILLE_LOCATION_ID } from "@/lib/square/locationDetail";
+import { loadLocationRoyaltyBundle } from "@/lib/royalties/locationBundle";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -33,8 +32,6 @@ export default async function LocationDashboardPage({
   const square = getSquareClient();
   const locRes = await square.locations.list();
   const locations: any[] = (locRes as any)?.data?.locations ?? [];
-  const locationOptions = MILLIES_LOCATIONS.map((m) => ({ id: m.id, name: m.name }));
-
   const location = locations.find((l) => l?.id === params.id);
   if (!location) {
     // Allow navigation even if Square marks it inactive/unlisted; we still want the page to load.
@@ -50,16 +47,14 @@ export default async function LocationDashboardPage({
   const weekParam = formatWeekParam(range.weekStart);
   const prevWeekParam = formatWeekParam(addDays(range.weekStart, -7));
   const nextWeekParam = formatWeekParam(addDays(range.weekStart, 7));
-  const detail = await getLocationWeeklyDetail(params.id, range, { timeZone: reportTz });
-  const s = await getLocationWeeklySummary(params.id, range);
-  // Net sales returned by getLocationWeeklyDetail already excludes delivery marketplaces,
-  // so we do not subtract delivery again when computing the royalty base.
-  const r = computeRoyalties(params.id, detail.netSales, {
-    excludeDeliveryNetSales: 0,
-    weekStartYmd: detail.weekStart,
-    weekEndYmd: detail.weekEnd,
-    techFeeCadence: "monthly",
+  const bundle = await loadLocationRoyaltyBundle({
+    locationId: params.id,
+    range,
+    timeZone: reportTz,
   });
+  const detail = bundle.detail;
+  const r = bundle.royalty;
+  const del = bundle.delivery;
   const weekLabel = weekLabelFromMondayYmd(weekParam);
 
   return (
@@ -87,10 +82,18 @@ export default async function LocationDashboardPage({
         />
       </div>
 
-      <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
-          <div className="text-sm font-medium text-zinc-700">Net sales</div>
-          <div className="mt-1 text-2xl font-semibold text-zinc-900">{dollars(detail.netSales)}</div>
+          <div className="text-sm font-medium text-zinc-700">Combined net sales</div>
+          <div className="mt-1 text-2xl font-semibold text-zinc-900">{dollars(bundle.combinedNetSales)}</div>
+          <div className="mt-2 text-xs text-zinc-600">
+            In-store {dollars(bundle.inStoreNetSales)}
+            {del.orderCount > 0 ? ` • Delivery ${dollars(bundle.deliveryNetSales)}` : ""}
+          </div>
+        </div>
+        <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+          <div className="text-sm font-medium text-zinc-700">In-store net</div>
+          <div className="mt-1 text-2xl font-semibold text-zinc-900">{dollars(bundle.inStoreNetSales)}</div>
           <div className="mt-2 text-xs text-zinc-600">Orders {detail.ordersCount.toLocaleString()}</div>
         </div>
         <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
@@ -110,19 +113,25 @@ export default async function LocationDashboardPage({
           </div>
           <div className="mt-2 text-xs text-zinc-600">Royalty base {r.configured && r.royaltyBase != null ? dollars(r.royaltyBase) : "—"}</div>
         </div>
-        <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
-          <div className="text-sm font-medium text-zinc-700">Discounts / returns</div>
-          <div className="mt-1 text-2xl font-semibold text-zinc-900">
-            {dollars(detail.discounts)} / {dollars(detail.refunds)}
+        {del.orderCount > 0 ? (
+          <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm lg:col-span-3">
+            <div className="text-sm font-medium text-zinc-700">Third-party delivery (this week)</div>
+            <div className="mt-1 text-2xl font-semibold text-zinc-900">{dollars(bundle.deliveryNetSales)}</div>
+            <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-zinc-600 sm:grid-cols-4">
+              <span>{del.orderCount} orders</span>
+              {del.platformFees > 0 ? <span>Platform fees {dollars(del.platformFees)}</span> : null}
+              {del.marketingDiscounts > 0 ? <span>Marketing {dollars(del.marketingDiscounts)}</span> : null}
+              {del.returns > 0 ? <span>Returns {dollars(del.returns)}</span> : null}
+              {del.refunds > 0 ? <span>Refunds {dollars(del.refunds)}</span> : null}
+            </div>
           </div>
-          <div className="mt-2 text-xs text-zinc-600">Delivery excluded: {dollars(detail.delivery.netSales)}</div>
-        </div>
+        ) : null}
       </div>
 
       <div className="mt-6 overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm">
         <div className="border-b border-zinc-200 px-5 py-4">
-          <h2 className="text-sm font-semibold text-zinc-900">Square metrics</h2>
-          <p className="mt-1 text-xs text-zinc-600">For spot-checking against Square reports.</p>
+          <h2 className="text-sm font-semibold text-zinc-900">Square metrics (in-store)</h2>
+          <p className="mt-1 text-xs text-zinc-600">Excludes DoorDash, Uber Eats, and Grubhub orders.</p>
         </div>
         <div className="grid grid-cols-1 gap-0 sm:grid-cols-2">
           <div className="border-b border-zinc-200 p-5 sm:border-b-0 sm:border-r">

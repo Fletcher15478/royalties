@@ -1,4 +1,4 @@
-import type { DeliveryRoyaltyRecord, ThirdPartyDeliveryPlatform } from "@/lib/square/delivery/types";
+import type { DeliveryRoyaltyRecord, DeliveryWeekTotals, ThirdPartyDeliveryPlatform } from "@/lib/square/delivery/types";
 
 const PLATFORM_LABEL: Record<ThirdPartyDeliveryPlatform, string> = {
   doordash: "DoorDash",
@@ -26,12 +26,13 @@ function sumRecords(records: DeliveryRoyaltyRecord[]) {
       acc.marketing += r.marketingDiscounts;
       acc.otherDisc += r.otherDiscounts;
       acc.refunds += r.refundsOnOrder + r.refundsFromPaymentsApi;
-      acc.deliveryFees += r.deliveryFeesExcluded;
+      acc.platformFees += r.platformFee;
       acc.net += r.netRoyaltyEligible;
       const p = r.platform;
-      if (!acc.byPlatform[p]) acc.byPlatform[p] = { count: 0, net: 0 };
+      if (!acc.byPlatform[p]) acc.byPlatform[p] = { count: 0, net: 0, fees: 0 };
       acc.byPlatform[p].count += 1;
       acc.byPlatform[p].net += r.netRoyaltyEligible;
+      acc.byPlatform[p].fees += r.platformFee;
       return acc;
     },
     {
@@ -40,9 +41,9 @@ function sumRecords(records: DeliveryRoyaltyRecord[]) {
       marketing: 0,
       otherDisc: 0,
       refunds: 0,
-      deliveryFees: 0,
+      platformFees: 0,
       net: 0,
-      byPlatform: {} as Record<ThirdPartyDeliveryPlatform, { count: number; net: number }>,
+      byPlatform: {} as Record<ThirdPartyDeliveryPlatform, { count: number; net: number; fees: number }>,
     }
   );
 }
@@ -52,10 +53,11 @@ function formatOrderLine(r: DeliveryRoyaltyRecord): string {
   const idShort = r.orderId.length > 12 ? `${r.orderId.slice(0, 12)}…` : r.orderId;
   const parts = [`Gross ${money(r.grossSales)}`];
   if (r.returns > 0) parts.push(`Returns ${money(r.returns)}`);
-  if (r.marketingDiscounts > 0) parts.push(`Marketing ${money(r.marketingDiscounts)}`);
+  if (r.marketingDiscounts > 0) parts.push(`Marketing promo ${money(r.marketingDiscounts)}`);
   if (r.otherDiscounts > 0) parts.push(`Other disc. ${money(r.otherDiscounts)}`);
   const refTotal = r.refundsOnOrder + r.refundsFromPaymentsApi;
   if (refTotal > 0) parts.push(`Refunds ${money(refTotal)}`);
+  if (r.platformFee > 0) parts.push(`Platform fee ${money(r.platformFee)}`);
   parts.push(`Net ${money(r.netRoyaltyEligible)}`);
   return `  [${plat}] ${idShort} — ${parts.join(", ")}`;
 }
@@ -64,7 +66,6 @@ const MAX_ORDER_LINES = 20;
 
 /**
  * Text block for one location's third-party delivery week (DoorDash / Uber / Grubhub).
- * Returns [] when there were no delivery orders in the period.
  */
 export function formatLocationDeliverySection(records: DeliveryRoyaltyRecord[]): string[] {
   if (records.length === 0) return [];
@@ -73,7 +74,7 @@ export function formatLocationDeliverySection(records: DeliveryRoyaltyRecord[]):
   const lines: string[] = [];
 
   lines.push(`Third-Party Delivery (This Week):`);
-  lines.push(`  Royalties on delivery are waived; figures below are for reconciliation only.`);
+  lines.push(`  Included in royalty calculation above.`);
   lines.push(`  Orders: ${records.length.toLocaleString()}`);
   lines.push("");
 
@@ -81,8 +82,9 @@ export function formatLocationDeliverySection(records: DeliveryRoyaltyRecord[]):
   for (const key of ["doordash", "uber_eats", "grubhub", "unknown"] as ThirdPartyDeliveryPlatform[]) {
     const bucket = t.byPlatform[key];
     if (!bucket?.count) continue;
+    const feePart = bucket.fees > 0 ? `, Platform fees ${money(bucket.fees)}` : "";
     lines.push(
-      `    ${PLATFORM_LABEL[key]}: ${bucket.count} order${bucket.count === 1 ? "" : "s"} — Net eligible ${money(bucket.net)}`
+      `    ${PLATFORM_LABEL[key]}: ${bucket.count} order${bucket.count === 1 ? "" : "s"} — Net ${money(bucket.net)}${feePart}`
     );
   }
   lines.push("");
@@ -90,11 +92,11 @@ export function formatLocationDeliverySection(records: DeliveryRoyaltyRecord[]):
   lines.push(`  Week totals (all delivery orders):`);
   lines.push(`    Gross merchandise: ${money(t.gross)}`);
   if (t.returns > 0) lines.push(`    Less returns: ${money(t.returns)}`);
-  if (t.marketing > 0) lines.push(`    Less marketing / promo discounts: ${money(t.marketing)}`);
+  if (t.marketing > 0) lines.push(`    Less marketing / promo (marketplace): ${money(t.marketing)}`);
   if (t.otherDisc > 0) lines.push(`    Less other discounts: ${money(t.otherDisc)}`);
   if (t.refunds > 0) lines.push(`    Less refunds: ${money(t.refunds)}`);
-  if (t.deliveryFees > 0) lines.push(`    Delivery fees (excluded from gross): ${money(t.deliveryFees)}`);
-  lines.push(`    Net royalty-eligible (waived): ${money(t.net)}`);
+  if (t.platformFees > 0) lines.push(`    Less platform fees (DoorDash / Uber / Grubhub): ${money(t.platformFees)}`);
+  lines.push(`    Net delivery sales (in royalty base): ${money(t.net)}`);
   lines.push("");
 
   lines.push(`  Order detail:`);
@@ -139,7 +141,10 @@ export function formatDeliveryReportSummary(
   })) {
     const name = locationNames.get(locId) ?? locId;
     const net = recs.reduce((s, x) => s + x.netRoyaltyEligible, 0);
-    lines.push(`    ${name}: ${recs.length} orders — Net eligible ${money(net)}`);
+    const fees = recs.reduce((s, x) => s + x.platformFee, 0);
+    lines.push(
+      `    ${name}: ${recs.length} orders — Net ${money(net)}${fees > 0 ? `, Platform fees ${money(fees)}` : ""}`
+    );
   }
 
   const t = sumRecords(allRecords);
@@ -147,11 +152,24 @@ export function formatDeliveryReportSummary(
   lines.push(`  Network totals:`);
   lines.push(`    Gross merchandise: ${money(t.gross)}`);
   if (t.returns > 0) lines.push(`    Less returns: ${money(t.returns)}`);
-  if (t.marketing > 0) lines.push(`    Less marketing discounts: ${money(t.marketing)}`);
+  if (t.marketing > 0) lines.push(`    Less marketing / promo: ${money(t.marketing)}`);
   if (t.otherDisc > 0) lines.push(`    Less other discounts: ${money(t.otherDisc)}`);
   if (t.refunds > 0) lines.push(`    Less refunds: ${money(t.refunds)}`);
-  lines.push(`    Net royalty-eligible (waived): ${money(t.net)}`);
+  if (t.platformFees > 0) lines.push(`    Less platform fees: ${money(t.platformFees)}`);
+  lines.push(`    Net delivery sales (in royalty base): ${money(t.net)}`);
   lines.push("");
 
+  return lines;
+}
+
+/** Short totals block when delivery exists but full section is omitted. */
+export function formatDeliveryTotalsInline(t: DeliveryWeekTotals): string[] {
+  if (t.orderCount === 0) return [];
+  const lines: string[] = [];
+  lines.push(`  Third-party delivery net: ${money(t.netRoyaltyEligible)} (${t.orderCount} orders)`);
+  if (t.platformFees > 0) lines.push(`    Platform fees: ${money(t.platformFees)}`);
+  if (t.marketingDiscounts > 0) lines.push(`    Marketing / promo: ${money(t.marketingDiscounts)}`);
+  if (t.returns > 0) lines.push(`    Returns: ${money(t.returns)}`);
+  if (t.refunds > 0) lines.push(`    Refunds: ${money(t.refunds)}`);
   return lines;
 }

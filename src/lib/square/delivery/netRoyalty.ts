@@ -10,19 +10,24 @@ function isGiftCardLine(li: any): boolean {
   return name.includes("gift card");
 }
 
-/** Service charges that are delivery marketplace fees — excluded from royalty merchandise base. */
-function deliveryServiceChargeCents(order: any): number {
+/** Platform / marketplace fees on the order (Square service_charges). */
+function platformFeeCents(order: any): number {
   let cents = 0;
   const charges: any[] = order?.serviceCharges ?? order?.service_charges ?? [];
   for (const sc of charges) {
     const name = String(sc?.name ?? "").toLowerCase();
-    const isDeliveryFee =
+    const looksLikePlatformFee =
       name.includes("delivery") ||
       name.includes("doordash") ||
       name.includes("uber") ||
       name.includes("grubhub") ||
-      name.includes("dasher");
-    if (!isDeliveryFee) continue;
+      name.includes("grub hub") ||
+      name.includes("dasher") ||
+      name.includes("eats") ||
+      name.includes("marketplace") ||
+      name.includes("commission") ||
+      name.includes("service fee");
+    if (!looksLikePlatformFee) continue;
     cents += moneyToCents(sc?.appliedMoney ?? sc?.applied_money) || moneyToCents(sc?.totalMoney ?? sc?.total_money);
   }
   return cents;
@@ -76,8 +81,7 @@ function extraRefundsFromPaymentMap(order: any, refundByPaymentId: Map<string, n
 
 /**
  * Royalty pool for a third-party delivery order:
- *   net = merchandiseGross − returns − marketingDiscounts − otherDiscounts − refunds
- * Delivery service charges are tracked separately and never added to gross.
+ *   net = merchandiseGross − returns − marketingDiscounts − otherDiscounts − refunds − platformFee
  */
 export function calculateDeliveryOrderNetRoyalty(
   order: any,
@@ -94,11 +98,17 @@ export function calculateDeliveryOrderNetRoyalty(
   const { marketingCents, otherCents } = splitDiscountCents(order);
   const refundsOrderCents = refundsOnOrderCents(order);
   const refundsApiCents = extraRefundsFromPaymentMap(order, refundByPaymentId);
-  const deliveryFeesCents = deliveryServiceChargeCents(order);
+  const platformFeeCentsTotal = platformFeeCents(order);
 
   const netCents = Math.max(
     0,
-    grossCents - returnsCents - marketingCents - otherCents - refundsOrderCents - refundsApiCents
+    grossCents -
+      returnsCents -
+      marketingCents -
+      otherCents -
+      refundsOrderCents -
+      refundsApiCents -
+      platformFeeCentsTotal
   );
 
   return {
@@ -113,8 +123,7 @@ export function calculateDeliveryOrderNetRoyalty(
     otherDiscounts: centsToDollars(otherCents),
     refundsOnOrder: centsToDollars(refundsOrderCents),
     refundsFromPaymentsApi: centsToDollars(refundsApiCents),
-    deliveryFeesExcluded: centsToDollars(deliveryFeesCents),
+    platformFee: centsToDollars(platformFeeCentsTotal),
     netRoyaltyEligible: centsToDollars(netCents),
-    royaltyWaived: true,
   };
 }

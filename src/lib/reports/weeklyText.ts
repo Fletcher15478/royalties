@@ -1,13 +1,11 @@
 import { addDays } from "date-fns";
 import { formatInTimeZone, fromZonedTime } from "date-fns-tz";
-import { getLocationWeeklyDetail } from "@/lib/square/locationDetail";
-import { computeRoyalties } from "@/lib/royalties/calc";
 import { MILLIES_LOCATIONS } from "@/lib/locations/millies";
 import { getWeekRangeMondayToMondayInTimeZone, type WeekRange } from "@/lib/dates/weekRange";
 import { ROYALTY_CONFIG_BY_LOCATION_ID } from "@/lib/royalties/config";
 import type { GiftCardPriorMonthReconciliation } from "@/lib/reports/types";
-import { syncDeliveryRoyaltiesForLocation } from "@/lib/square/delivery/service";
 import type { DeliveryRoyaltyRecord } from "@/lib/square/delivery/types";
+import { loadLocationRoyaltyBundle } from "@/lib/royalties/locationBundle";
 import { formatDeliveryReportSummary, formatLocationDeliverySection } from "@/lib/reports/deliveryText";
 
 function money(n: number) {
@@ -56,19 +54,6 @@ function techFeeBannerMonthEt(weekMondayYmdEt: string, tz: string): string {
   return "April";
 }
 
-const DELIVERY_NOTE_END_MARKERS: Partial<Record<string, string>> = {
-  "2026-04-06": "Apr 12",
-  "2026-03-30": "Apr 05",
-  "2026-03-23": "Mar 31",
-};
-
-function deliveryWaiverEndsLabelEt(weekMondayYmdEt: string, tz: string, range: WeekRange): string {
-  const byWeek = DELIVERY_NOTE_END_MARKERS[weekMondayYmdEt];
-  if (byWeek) return byWeek;
-  const lastMoment = new Date(range.weekEnd.getTime() - 1);
-  return formatInTimeZone(lastMoment, tz, "MMM dd");
-}
-
 function priorMonthGcReconciliationLines(g: GiftCardPriorMonthReconciliation): string[] {
   const lines: string[] = [];
   let n = 1;
@@ -100,25 +85,19 @@ export async function buildWeeklyTextReport(params: { weekStartYmd: string; time
 
   const includedLocations = MILLIES_LOCATIONS.filter((l) => l.includeInRoyaltiesDashboard !== false);
 
-  // Avoid fully-parallel Square fanout; it can rate-limit and fail the entire report.
   const details: {
     loc: (typeof includedLocations)[number];
-    d: Awaited<ReturnType<typeof getLocationWeeklyDetail>>;
+    bundle: Awaited<ReturnType<typeof loadLocationRoyaltyBundle>>;
     cfg: (typeof ROYALTY_CONFIG_BY_LOCATION_ID)[string] | undefined;
-    royalty: ReturnType<typeof computeRoyalties> | { configured: false };
   }[] = [];
   for (const loc of includedLocations) {
-    const d = await getLocationWeeklyDetail(loc.id, range, { timeZone: tz });
+    const bundle = await loadLocationRoyaltyBundle({
+      locationId: loc.id,
+      range,
+      timeZone: tz,
+    });
     const cfg = ROYALTY_CONFIG_BY_LOCATION_ID[loc.id];
-    const royalty = cfg
-      ? computeRoyalties(loc.id, d.netSales, {
-          excludeDeliveryNetSales: 0,
-          weekStartYmd: weekMondayYmdEt,
-          weekEndYmd: formatInTimeZone(range.weekEnd, tz, "yyyy-MM-dd"),
-          techFeeCadence: "monthly",
-        })
-      : ({ configured: false } as const);
-    details.push({ loc, d, cfg, royalty });
+    details.push({ loc, bundle, cfg });
   }
 
   const byEntity = new Map<string, typeof details>();
@@ -131,8 +110,6 @@ export async function buildWeeklyTextReport(params: { weekStartYmd: string; time
 
   const startLabel = formatInTimeZone(range.weekStart, tz, "yyyy-MM-dd hh:mm a");
   const endLabel = formatInTimeZone(range.weekEnd, tz, "yyyy-MM-dd hh:mm a");
-
-  const deliveryLine = `Note: Royalties on delivery services are waived for Nov 01 … ${deliveryWaiverEndsLabelEt(weekMondayYmdEt, tz, range)}.`;
 
   const lines: string[] = [];
   const allDeliveryRecords: DeliveryRoyaltyRecord[] = [];
@@ -149,29 +126,50 @@ export async function buildWeeklyTextReport(params: { weekStartYmd: string; time
     lines.push("=".repeat(27));
     lines.push(padTitle(title.toUpperCase()));
     lines.push("=".repeat(27));
-    lines.push(deliveryLine);
+    lines.push(`Note: Royalties include in-store Square sales and third-party delivery (DoorDash, Uber Eats, Grubhub).`);
     lines.push("");
 
     for (const r of rows.sort((a, b) => a.loc.name.localeCompare(b.loc.name))) {
+      const { bundle } = r;
+      const d = bundle.detail;
+      const royalty = bundle.royalty;
+
       lines.push(`----- ${locationReportTitle(r.loc.id, r.loc.name)} -----`);
       lines.push("");
 
       if (!r.cfg) {
         lines.push(`Weekly Royalty:`);
-        lines.push(`  1. Net Sales: ${money(r.d.netSales)}`);
-        lines.push(`    - Square Sales: ${money(r.d.netSales)}`);
+        lines.push(`  1. Combined Net Sales: ${money(bundle.combinedNetSales)}`);
+        lines.push(`    - In-store: ${money(bundle.inStoreNetSales)}`);
+        if (bundle.delivery.orderCount > 0) {
+          lines.push(`    - Third-party delivery: ${money(bundle.deliveryNetSales)}`);
+        }
       } else {
         const rate = r.cfg.royaltyRate ?? 0;
-        const royaltyAmount = r.royalty.configured ? (r.royalty.royaltyAmount ?? 0) : 0;
-        const techFee = r.royalty.configured ? (r.royalty.techFee ?? 0) : 0;
-        const totalDue = r.royalty.configured ? (r.royalty.totalDue ?? royaltyAmount + techFee) : royaltyAmount;
+        const royaltyAmount = royalty.configured ? (royalty.royaltyAmount ?? 0) : 0;
+        const techFee = royalty.configured ? (royalty.techFee ?? 0) : 0;
+        const totalDue = royalty.configured ? (royalty.totalDue ?? royaltyAmount + techFee) : royaltyAmount;
         let step = 1;
 
         lines.push(`Weekly Royalty:`);
-        lines.push(`  ${step++}. Net Sales: ${money(r.d.netSales)}`);
-        lines.push(`    - Square Sales: ${money(r.d.netSales)}`);
-        lines.push(`  ${step++}. ${pct(rate)} royalty on Net Sales: ${money(royaltyAmount)}`);
-        const assessTech = Boolean(r.royalty.configured && (r.royalty.techFeeAssessed ?? false) && techFee > 0);
+        lines.push(`  ${step++}. In-store Net Sales: ${money(bundle.inStoreNetSales)}`);
+        lines.push(`    - Square Sales (excludes delivery apps)`);
+        if (bundle.delivery.orderCount > 0) {
+          lines.push(`  ${step++}. Third-party Delivery Net Sales: ${money(bundle.deliveryNetSales)}`);
+          lines.push(`    - Orders: ${bundle.delivery.orderCount}`);
+          const del = bundle.delivery;
+          if (del.platformFees > 0) {
+            lines.push(`    - Less platform fees (DD / Uber / Grubhub): ${money(del.platformFees)}`);
+          }
+          if (del.marketingDiscounts > 0) {
+            lines.push(`    - Less marketing / promo: ${money(del.marketingDiscounts)}`);
+          }
+          if (del.returns > 0) lines.push(`    - Less returns: ${money(del.returns)}`);
+          if (del.refunds > 0) lines.push(`    - Less refunds: ${money(del.refunds)}`);
+        }
+        lines.push(`  ${step++}. Combined Net Sales: ${money(bundle.combinedNetSales)}`);
+        lines.push(`  ${step++}. ${pct(rate)} royalty on Combined Net Sales: ${money(royaltyAmount)}`);
+        const assessTech = Boolean(royalty.configured && (royalty.techFeeAssessed ?? false) && techFee > 0);
         if (assessTech) {
           const mn = techFeeBannerMonthEt(weekMondayYmdEt, tz);
           lines.push(`  ${step++}. Plus ${mn} Technology Fee: ${money(techFee)}`);
@@ -181,7 +179,16 @@ export async function buildWeeklyTextReport(params: { weekStartYmd: string; time
       }
       lines.push("");
 
-      const gc = r.d.giftCardActivity;
+      allDeliveryRecords.push(...bundle.deliveryRecords);
+      const deliveryLines = formatLocationDeliverySection(bundle.deliveryRecords);
+      if (deliveryLines.length > 0) {
+        for (const L of deliveryLines) {
+          lines.push(L);
+        }
+        lines.push("");
+      }
+
+      const gc = d.giftCardActivity;
       const showGc =
         (gc?.activated ?? 0) !== 0 ||
         (gc?.sold ?? 0) !== 0 ||
@@ -204,8 +211,8 @@ export async function buildWeeklyTextReport(params: { weekStartYmd: string; time
         lines.push("");
       }
 
-      const gcMonth = r.d.giftCardCalendarMonth;
-      const recon = r.d.giftCardPriorMonthReconciliation;
+      const gcMonth = d.giftCardCalendarMonth;
+      const recon = d.giftCardPriorMonthReconciliation;
       const skipCalendarDup =
         gcMonth && recon && gcMonth.monthLabel === recon.monthLabel;
       if (gcMonth && !skipCalendarDup) {
@@ -230,42 +237,19 @@ export async function buildWeeklyTextReport(params: { weekStartYmd: string; time
         lines.push("");
       }
 
-      let deliveryRecords: DeliveryRoyaltyRecord[] = [];
-      try {
-        const { records } = await syncDeliveryRoyaltiesForLocation({
-          locationId: r.loc.id,
-          range,
-          timeZone: tz,
-        });
-        deliveryRecords = records;
-        allDeliveryRecords.push(...records);
-      } catch {
-        lines.push(`Third-Party Delivery (This Week):`);
-        lines.push(`  (Unable to load delivery data from Square for this location.)`);
-        lines.push("");
-      }
-
-      const deliveryLines = formatLocationDeliverySection(deliveryRecords);
-      if (deliveryLines.length > 0) {
-        for (const L of deliveryLines) {
-          lines.push(L);
-        }
-        lines.push("");
-      }
-
-      lines.push(`Square Metrics:`);
-      lines.push(`  # Orders: ${r.d.ordersCount.toLocaleString()}`);
-      lines.push(`  Gross Sales: ${money(r.d.grossSales)}`);
-      const inferredReturns = Math.max(0, r.d.grossSales - r.d.discounts - r.d.netSales);
+      lines.push(`Square Metrics (in-store):`);
+      lines.push(`  # Orders: ${d.ordersCount.toLocaleString()}`);
+      lines.push(`  Gross Sales: ${money(d.grossSales)}`);
+      const inferredReturns = Math.max(0, d.grossSales - d.discounts - d.netSales);
       if (inferredReturns > 0) lines.push(`    Returns: ${money(inferredReturns)}`);
-      lines.push(`    Discounts: ${money(r.d.discounts)}`);
-      lines.push(`  Net Sales: ${money(r.d.netSales)}`);
-      if (r.d.refunds) lines.push(`    Refunds: ${money(r.d.refunds)}`);
-      lines.push(`    Tax: ${money(r.d.tax)}`);
-      lines.push(`    Tips: ${money(r.d.tips)}`);
-      if (r.d.giftCardSales) lines.push(`    Gift Card Sales: ${money(r.d.giftCardSales)}`);
-      lines.push(`  Total Sales: ${money(r.d.totalSales)}`);
-      lines.push(`  Collected: ${money(r.d.collected)}`);
+      lines.push(`    Discounts: ${money(d.discounts)}`);
+      lines.push(`  Net Sales: ${money(d.netSales)}`);
+      if (d.refunds) lines.push(`    Refunds: ${money(d.refunds)}`);
+      lines.push(`    Tax: ${money(d.tax)}`);
+      lines.push(`    Tips: ${money(d.tips)}`);
+      if (d.giftCardSales) lines.push(`    Gift Card Sales: ${money(d.giftCardSales)}`);
+      lines.push(`  Total Sales: ${money(d.totalSales)}`);
+      lines.push(`  Collected: ${money(d.collected)}`);
       lines.push("");
     }
   }

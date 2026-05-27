@@ -20,6 +20,23 @@ function dollars(n: number) {
   return n.toLocaleString(undefined, { style: "currency", currency: "USD" });
 }
 
+async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const out: R[] = new Array(items.length);
+  let idx = 0;
+
+  const worker = async () => {
+    while (true) {
+      const i = idx++;
+      if (i >= items.length) return;
+      out[i] = await fn(items[i]);
+    }
+  };
+
+  const workers = Array.from({ length: Math.min(limit, items.length) }, () => worker());
+  await Promise.all(workers);
+  return out;
+}
+
 export default async function DashboardPage({
   searchParams,
 }: {
@@ -40,16 +57,20 @@ export default async function DashboardPage({
   const includedLocations = MILLIES_LOCATIONS.filter((l) => l.includeInRoyaltiesDashboard !== false);
   const squareById = new Map<string, any>(locations.map((l) => [String(l.id), l]));
   const milliesSquareLocations = includedLocations.map((m) => squareById.get(m.id) ?? { id: m.id, name: m.name, status: "UNKNOWN" });
-  const bundles: Awaited<ReturnType<typeof loadLocationRoyaltyBundle>>[] = [];
-  for (const l of includedLocations) {
-    bundles.push(
-      await loadLocationRoyaltyBundle({
+  const rows = await mapLimit(includedLocations, 3, async (l) => {
+    try {
+      const bundle = await loadLocationRoyaltyBundle({
         locationId: l.id,
         range,
         timeZone: "America/New_York",
-      })
-    );
-  }
+      });
+      return { kind: "ok" as const, locationId: l.id, bundle };
+    } catch (err: any) {
+      return { kind: "error" as const, locationId: l.id, error: err?.message ?? "Unable to load" };
+    }
+  });
+
+  const bundles = rows.filter((r) => r.kind === "ok").map((r) => r.bundle);
 
   const totalCombinedNet = bundles.reduce((sum, b) => sum + b.combinedNetSales, 0);
   const totalInStoreNet = bundles.reduce((sum, b) => sum + b.inStoreNetSales, 0);
@@ -134,29 +155,39 @@ export default async function DashboardPage({
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-200">
-              {bundles
-                .sort((a, b) => b.combinedNetSales - a.combinedNetSales)
-                .map((b) => {
-                  const loc = milliesSquareLocations.find((l) => String(l.id) === b.detail.locationId);
-                  const r = b.royalty;
+              {rows
+                .slice()
+                .sort((a, b) => {
+                  const ba = a.kind === "ok" ? a.bundle.combinedNetSales : -Infinity;
+                  const bb = b.kind === "ok" ? b.bundle.combinedNetSales : -Infinity;
+                  return bb - ba;
+                })
+                .map((row) => {
+                  const b = row.kind === "ok" ? row.bundle : null;
+                  const loc = milliesSquareLocations.find((l) => String(l.id) === row.locationId);
+                  const r = b?.royalty;
                   return (
-                    <tr key={b.detail.locationId} className="hover:bg-zinc-50">
+                    <tr key={row.locationId} className="hover:bg-zinc-50">
                       <td className="px-5 py-3">
                         <Link
                           className="font-semibold text-zinc-900 hover:underline"
-                          href={`/dashboard/location/${b.detail.locationId}?week=${b.detail.weekStart}`}
+                          href={`/dashboard/location/${row.locationId}?week=${weekParam}`}
                         >
-                          {loc?.name ?? b.detail.locationId}
+                          {loc?.name ?? row.locationId}
                         </Link>
-                        {r.configured ? (
+                        {row.kind === "error" ? (
+                          <div className="mt-0.5 text-xs text-red-700">Delivery timeout/error: {row.error}</div>
+                        ) : r?.configured ? (
                           <div className="mt-0.5 text-xs text-zinc-600">{r.owner} • {r.entity}</div>
                         ) : (
                           <div className="mt-0.5 text-xs text-zinc-600">Not configured for royalties yet</div>
                         )}
                       </td>
-                      <td className="px-5 py-3 tabular-nums font-medium text-zinc-900">{dollars(b.combinedNetSales)}</td>
+                      <td className="px-5 py-3 tabular-nums font-medium text-zinc-900">
+                        {b ? dollars(b.combinedNetSales) : "—"}
+                      </td>
                       <td className="px-5 py-3 tabular-nums text-zinc-800">
-                        {b.delivery.orderCount > 0 ? (
+                        {b && b.delivery.orderCount > 0 ? (
                           <>
                             {dollars(b.deliveryNetSales)}
                             <div className="mt-0.5 text-[11px] text-zinc-500">
@@ -169,19 +200,19 @@ export default async function DashboardPage({
                         )}
                       </td>
                       <td className="px-5 py-3 tabular-nums text-zinc-800">
-                        {r.configured && r.royaltyRate != null ? `${(r.royaltyRate * 100).toFixed(2)}%` : "—"}
+                        {r?.configured && r.royaltyRate != null ? `${(r.royaltyRate * 100).toFixed(2)}%` : "—"}
                       </td>
                       <td className="px-5 py-3 tabular-nums text-zinc-900">
-                        {r.configured && r.royaltyAmount != null ? dollars(r.royaltyAmount) : "—"}
+                        {r?.configured && r.royaltyAmount != null ? dollars(r.royaltyAmount) : "—"}
                       </td>
                       <td className="px-5 py-3 tabular-nums text-zinc-900">
-                        {r.configured && r.techFee != null ? dollars(r.techFee) : "—"}
-                        {r.configured && r.techFeeAssessed === false ? (
+                        {r?.configured && r.techFee != null ? dollars(r.techFee) : "—"}
+                        {r?.configured && r.techFeeAssessed === false ? (
                           <div className="mt-0.5 text-[11px] text-zinc-500">assessed monthly</div>
                         ) : null}
                       </td>
                       <td className="px-5 py-3 tabular-nums font-semibold text-zinc-900">
-                        {r.configured && r.totalDue != null ? dollars(r.totalDue) : "—"}
+                        {r?.configured && r.totalDue != null ? dollars(r.totalDue) : "—"}
                       </td>
                     </tr>
                   );

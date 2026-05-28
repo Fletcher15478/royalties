@@ -23,7 +23,7 @@ export const MILLIES_LOCATIONS: MilliesLocation[] = [
   { name: "Tiny Van", id: "LJDR9RFPDTZX3", flatFeeCents: 5814 },
   { name: "Truck PGH", id: "LWW1CFV8T5DTF", flatFeeCents: 5814 },
   { name: "Murrysville", id: "LF70VBZ7CDMHE", flatFeeCents: 5814 },
-  { name: "North Park", id: "LK15PMM2F5SGB", flatFeeCents: 5499, includeInRoyaltiesDashboard: false },
+  { name: "North Park", id: "LK15PMM2F5SGB", flatFeeCents: 5499 },
   { name: "Ponte Vedra", id: "LQQKGMSGV8V1M", flatFeeCents: 5814 },
   { name: "Truck JAX", id: "L2P2FKMPD9WZ8", flatFeeCents: 5814 },
   { name: "Greensburg", id: "LK5H7DE78S097", flatFeeCents: 5814 },

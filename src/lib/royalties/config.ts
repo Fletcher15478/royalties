@@ -37,6 +37,7 @@ export const ROYALTY_CONFIG_BY_LOCATION_ID: Record<string, RoyaltyConfig> = {
   LK5H7DE78S097: { owner: "HHT Frozen Holdings LLC", entity: "HHT Frozen Holdings LLC", royaltyRate: 0.05, techFee: 250 }, // Greensburg
   L09KC5S41GQRP: { owner: "HHT Frozen Holdings LLC", entity: "HHT Frozen Holdings LLC", royaltyRate: 0.05, techFee: 250 }, // Market Square
   LEAVYE5AMZF06: { owner: "HHT Frozen Holdings LLC", entity: "HHT Frozen Holdings LLC", royaltyRate: 0.05, techFee: 250 }, // Cranberry
+  LK15PMM2F5SGB: { owner: "HHT Frozen Holdings LLC", entity: "HHT Frozen Holdings LLC", royaltyRate: 0.02, techFee: 250 }, // North Park — 2%
 
   // Truck WC (rate confirmed as 5%)
   LGHK54YYZZCNA: { owner: "HHT Frozen Holdings LLC", entity: "HHT Frozen Holdings LLC", royaltyRate: 0.05, techFee: 95 }, // Truck WC

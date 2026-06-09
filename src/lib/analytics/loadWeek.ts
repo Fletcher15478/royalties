@@ -1,26 +1,22 @@
+import "server-only";
+
 import { getWeekRangeMondayToMondayInTimeZone, type WeekRange } from "@/lib/dates/weekRange";
 import { aggregateAnalyticsWeek, aggregateSalesWeek } from "@/lib/analytics/aggregate";
 import { shouldExcludeFromInStoreSales } from "@/lib/analytics/exclusions";
 import { fetchAnalyticsOrders, mapLimit } from "@/lib/analytics/ordersFetch";
 import { getAnalyticsLocations } from "@/lib/analytics/locations";
 import { getLocationWeeklyDetail } from "@/lib/square/locationDetail";
-import type {
-  FlavorAggregate,
-  LocationProductMetrics,
-  LocationSalesSnapshot,
-} from "@/lib/analytics/types";
+import {
+  mergeLocationWeekPayloads,
+  type AnalyticsWeekDetail,
+  type AnalyticsWeekPayload,
+} from "@/lib/analytics/weekPayload";
+import type { LocationSalesSnapshot } from "@/lib/analytics/types";
+
+export type { AnalyticsWeekDetail, AnalyticsWeekPayload } from "@/lib/analytics/weekPayload";
+export { mergeLocationWeekPayloads } from "@/lib/analytics/weekPayload";
 
 const TZ = "America/New_York";
-
-export type AnalyticsWeekDetail = "full" | "sales";
-
-export type AnalyticsWeekPayload = {
-  weekStartYmd: string;
-  detail: AnalyticsWeekDetail;
-  salesByLocation: Record<string, LocationSalesSnapshot>;
-  productsByLocation?: Record<string, LocationProductMetrics>;
-  companyFlavors?: FlavorAggregate[];
-};
 
 function weekRangeFromMondayYmd(mondayYmd: string): WeekRange {
   const anchor = new Date(`${mondayYmd}T12:00:00.000Z`);
@@ -72,36 +68,6 @@ export async function loadAnalyticsLocationWeek(
     salesByLocation,
     productsByLocation: products ? { [locationId]: products } : undefined,
     companyFlavors: agg.companyFlavors,
-  };
-}
-
-export function mergeLocationWeekPayloads(
-  weekStartYmd: string,
-  detail: AnalyticsWeekDetail,
-  parts: AnalyticsWeekPayload[]
-): AnalyticsWeekPayload {
-  const salesByLocation: Record<string, LocationSalesSnapshot> = {};
-  const productsByLocation: Record<string, LocationProductMetrics> = {};
-  const flavorMap = new Map<string, FlavorAggregate>();
-
-  for (const part of parts) {
-    Object.assign(salesByLocation, part.salesByLocation);
-    if (part.productsByLocation) Object.assign(productsByLocation, part.productsByLocation);
-    for (const f of part.companyFlavors ?? []) {
-      const cur = flavorMap.get(f.name) ?? { name: f.name, units: 0, revenue: 0 };
-      cur.units += f.units;
-      cur.revenue += f.revenue;
-      flavorMap.set(f.name, cur);
-    }
-  }
-
-  return {
-    weekStartYmd,
-    detail,
-    salesByLocation,
-    productsByLocation: detail === "full" ? productsByLocation : undefined,
-    companyFlavors:
-      detail === "full" ? [...flavorMap.values()].sort((a, b) => b.units - a.units) : undefined,
   };
 }
 

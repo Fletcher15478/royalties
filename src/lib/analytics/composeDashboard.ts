@@ -4,7 +4,7 @@ import { pctChange } from "@/lib/analytics/compare";
 import { analyticsLocationName, getAnalyticsLocations } from "@/lib/analytics/locations";
 import { buildExecutiveInsights, buildFlavorMovers } from "@/lib/analytics/insights";
 import { computeHealthScore, countConsecutiveDeclines, topFlavorWowPct } from "@/lib/analytics/health";
-import type { AnalyticsWeekPayload } from "@/lib/analytics/loadWeek";
+import type { AnalyticsWeekPayload } from "@/lib/analytics/weekPayload";
 import type { DashboardWeekKeys } from "@/lib/analytics/weekUtils";
 import type {
   CompanyOverview,

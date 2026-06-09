@@ -6,7 +6,7 @@ import { PctBadge } from "@/components/analytics/PctBadge";
 import { WeeklyPerformanceCharts } from "@/components/analytics/WeeklyPerformanceCharts";
 import { dollars, pct } from "@/components/analytics/format";
 import { composeWeeklyPerformanceDashboard } from "@/lib/analytics/composeDashboard";
-import { mergeLocationWeekPayloads, type AnalyticsWeekPayload } from "@/lib/analytics/loadWeek";
+import { mergeLocationWeekPayloads, type AnalyticsWeekPayload } from "@/lib/analytics/weekPayload";
 import { getDashboardWeekKeys } from "@/lib/analytics/weekUtils";
 import type { WeeklyPerformanceDashboard } from "@/lib/analytics/types";
 

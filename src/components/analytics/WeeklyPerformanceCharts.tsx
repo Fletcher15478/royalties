@@ -14,7 +14,7 @@ import {
   YAxis,
 } from "recharts";
 import { weekLabelFromMondayYmd } from "@/lib/dates/weekRange";
-import type { AnalyticsWeekPayload } from "@/lib/analytics/loadWeek";
+import type { AnalyticsWeekPayload } from "@/lib/analytics/weekPayload";
 import { getDashboardWeekKeys } from "@/lib/analytics/weekUtils";
 import type { TrendWeek } from "@/lib/analytics/types";
 import { dollars } from "@/components/analytics/format";

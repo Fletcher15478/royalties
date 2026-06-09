@@ -8,7 +8,7 @@ import { moneyToCents } from "@/lib/square/money";
 const MARKET_SQUARE_LOCATION_ID = "L09KC5S41GQRP";
 const SOUTH_FAYETTE_LOCATION_ID = "LZGJ6T9JYFG7W";
 
-/** Mirrors Square Sales Summary / leadership spreadsheet — excludes 3P delivery and selected Square Online orders. */
+/** In-store Square orders for product mix — excludes 3P delivery and selected Square Online orders. */
 export function shouldExcludeSquareOnlineOrder(order: any, locationId: string): boolean {
   const src = String(order?.source?.name ?? "").toLowerCase();
   if (!src.includes("square online")) return false;

@@ -1,11 +1,11 @@
 import "server-only";
 
 import { getWeekRangeMondayToMondayInTimeZone, type WeekRange } from "@/lib/dates/weekRange";
-import { aggregateAnalyticsWeek, aggregateSalesWeek } from "@/lib/analytics/aggregate";
+import { aggregateAnalyticsWeek } from "@/lib/analytics/aggregate";
 import { shouldExcludeFromInStoreSales } from "@/lib/analytics/exclusions";
 import { fetchAnalyticsOrders, mapLimit } from "@/lib/analytics/ordersFetch";
 import { getAnalyticsLocations } from "@/lib/analytics/locations";
-import { getLocationWeeklyDetail } from "@/lib/square/locationDetail";
+import { loadLeadershipSalesSnapshot } from "@/lib/analytics/leadershipNet";
 import {
   mergeLocationWeekPayloads,
   type AnalyticsWeekDetail,
@@ -23,21 +23,15 @@ function weekRangeFromMondayYmd(mondayYmd: string): WeekRange {
   return getWeekRangeMondayToMondayInTimeZone(anchor, TZ);
 }
 
-function snapshotFromDetail(
+function loadLeadershipSalesSnapshotForWeek(
   locationId: string,
-  detail: Awaited<ReturnType<typeof getLocationWeeklyDetail>>
-): LocationSalesSnapshot {
-  return {
-    locationId,
-    ordersCount: detail.ordersCount,
-    grossSales: detail.grossSales,
-    discounts: detail.discounts,
-    refunds: detail.refunds,
-    netSales: detail.netSales,
-  };
+  range: WeekRange,
+  weekStartYmd: string
+): Promise<LocationSalesSnapshot> {
+  return loadLeadershipSalesSnapshot(locationId, range, weekStartYmd, TZ);
 }
 
-/** One location, one week — in-store net sales aligned to leadership spreadsheet. */
+/** One location, one week — net sales aligned to the Monday leadership spreadsheet. */
 export async function loadAnalyticsLocationWeek(
   locationId: string,
   weekStartYmd: string,
@@ -46,24 +40,21 @@ export async function loadAnalyticsLocationWeek(
   const range = weekRangeFromMondayYmd(weekStartYmd);
 
   if (detail === "sales") {
-    const weeklyDetail = await getLocationWeeklyDetail(locationId, range, {
-      timeZone: TZ,
-      forceSquare: true,
-    });
+    const sales = await loadLeadershipSalesSnapshotForWeek(locationId, range, weekStartYmd);
     return {
       weekStartYmd,
       detail,
-      salesByLocation: { [locationId]: snapshotFromDetail(locationId, weeklyDetail) },
+      salesByLocation: { [locationId]: sales },
     };
   }
 
-  const [weeklyDetail, orders] = await Promise.all([
-    getLocationWeeklyDetail(locationId, range, { timeZone: TZ, forceSquare: true }),
+  const [sales, orders] = await Promise.all([
+    loadLeadershipSalesSnapshotForWeek(locationId, range, weekStartYmd),
     fetchAnalyticsOrders([locationId], range),
   ]);
 
   const salesByLocation: Record<string, LocationSalesSnapshot> = {
-    [locationId]: snapshotFromDetail(locationId, weeklyDetail),
+    [locationId]: sales,
   };
 
   const inStoreOrders = orders.filter((o) => !shouldExcludeFromInStoreSales(o, locationId));
@@ -79,26 +70,17 @@ export async function loadAnalyticsLocationWeek(
   };
 }
 
-/** Batched trend week with in-store order exclusions. */
+/** Batched trend week — leadership net (in-store + third-party delivery) per location. */
 export async function loadAnalyticsTrendWeek(weekStartYmd: string): Promise<AnalyticsWeekPayload> {
   const locations = getAnalyticsLocations();
-  const locationIds = locations.map((l) => l.id);
   const range = weekRangeFromMondayYmd(weekStartYmd);
-  const orders = await fetchAnalyticsOrders(locationIds, range);
-
-  const inStoreOrders: any[] = [];
-  for (const order of orders) {
-    const locationId = String(order?.locationId ?? order?.location_id ?? "");
-    if (!locationIds.includes(locationId)) continue;
-    if (shouldExcludeFromInStoreSales(order, locationId)) continue;
-    inStoreOrders.push(order);
-  }
-
-  const { salesByLocation } = aggregateSalesWeek(inStoreOrders, locationIds);
+  const snapshots = await mapLimit(locations, 3, (loc) =>
+    loadLeadershipSalesSnapshotForWeek(loc.id, range, weekStartYmd)
+  );
   return {
     weekStartYmd,
     detail: "sales",
-    salesByLocation: Object.fromEntries(salesByLocation.entries()),
+    salesByLocation: Object.fromEntries(snapshots.map((s) => [s.locationId, s])),
   };
 }
 

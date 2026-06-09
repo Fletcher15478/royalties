@@ -1,3 +1,5 @@
+import "server-only";
+
 import { searchOrdersInRange } from "@/lib/square/delivery/searchOrders";
 import { toIsoNoMillis, type WeekRange } from "@/lib/dates/weekRange";
 

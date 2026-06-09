@@ -15,6 +15,7 @@ import {
 } from "recharts";
 import { weekLabelFromMondayYmd } from "@/lib/dates/weekRange";
 import type { AnalyticsWeekPayload } from "@/lib/analytics/weekPayload";
+import { fetchAnalyticsApi } from "@/components/analytics/apiFetch";
 import { getDashboardWeekKeys } from "@/lib/analytics/weekUtils";
 import type { TrendWeek } from "@/lib/analytics/types";
 import { dollars } from "@/components/analytics/format";
@@ -31,10 +32,9 @@ function shortWeek(label: string) {
 }
 
 async function fetchSalesWeek(week: string): Promise<AnalyticsWeekPayload> {
-  const res = await fetch(`/api/analytics/trend-week?week=${week}`, { credentials: "include" });
-  const json = await res.json();
-  if (!res.ok || !json.ok) throw new Error(json.error ?? "Failed to load trend week");
-  return json;
+  return fetchAnalyticsApi<AnalyticsWeekPayload & { ok: boolean; error?: string }>(
+    `/api/analytics/trend-week?week=${week}`
+  );
 }
 
 function payloadToTrendWeek(payload: AnalyticsWeekPayload, topFlavorName: string | null): TrendWeek {

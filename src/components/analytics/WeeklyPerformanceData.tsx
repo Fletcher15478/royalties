@@ -6,46 +6,23 @@ import { PctBadge } from "@/components/analytics/PctBadge";
 import { WeeklyPerformanceCharts } from "@/components/analytics/WeeklyPerformanceCharts";
 import { dollars, pct } from "@/components/analytics/format";
 import { composeWeeklyPerformanceDashboard } from "@/lib/analytics/composeDashboard";
-import { mergeLocationWeekPayloads, type AnalyticsWeekPayload } from "@/lib/analytics/weekPayload";
+import type { AnalyticsWeekPayload } from "@/lib/analytics/weekPayload";
 import { getDashboardWeekKeys } from "@/lib/analytics/weekUtils";
 import type { WeeklyPerformanceDashboard } from "@/lib/analytics/types";
+import { fetchAnalyticsApi } from "@/components/analytics/apiFetch";
 
-async function fetchLocationWeek(
-  week: string,
-  locationId: string,
-  detail: "full" | "sales"
-): Promise<AnalyticsWeekPayload> {
-  const res = await fetch(
-    `/api/analytics/location-week?week=${week}&locationId=${locationId}&detail=${detail}`,
-    { credentials: "include" }
+async function fetchAnalyticsWeek(week: string, detail: "full" | "sales"): Promise<AnalyticsWeekPayload> {
+  const json = await fetchAnalyticsApi<AnalyticsWeekPayload & { ok: boolean; error?: string }>(
+    `/api/analytics/week?week=${week}&detail=${detail}`
   );
-  const json = await res.json();
-  if (!res.ok || !json.ok) {
-    throw new Error(json.error ?? `Failed to load ${locationId} for week ${week}`);
-  }
   return json;
-}
-
-async function fetchAnalyticsWeekMerged(
-  week: string,
-  detail: "full" | "sales",
-  locationIds: string[]
-): Promise<AnalyticsWeekPayload> {
-  const parts: AnalyticsWeekPayload[] = [];
-  for (let i = 0; i < locationIds.length; i += 3) {
-    const batch = locationIds.slice(i, i + 3);
-    const batchParts = await Promise.all(batch.map((id) => fetchLocationWeek(week, id, detail)));
-    parts.push(...batchParts);
-  }
-  return mergeLocationWeekPayloads(week, detail, parts);
 }
 
 type Props = {
   weekParam: string;
-  locationIds: string[];
 };
 
-export function WeeklyPerformanceData({ weekParam, locationIds }: Props) {
+export function WeeklyPerformanceData({ weekParam }: Props) {
   const [data, setData] = useState<WeeklyPerformanceDashboard | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState("Loading current and prior week…");
@@ -61,18 +38,22 @@ export function WeeklyPerformanceData({ weekParam, locationIds }: Props) {
       try {
         const keys = getDashboardWeekKeys(weekParam);
 
-        const [current, prior] = await Promise.all([
-          fetchAnalyticsWeekMerged(keys.current, "full", locationIds),
-          fetchAnalyticsWeekMerged(keys.prior, "full", locationIds),
-        ]);
+        setStatus("Loading current week…");
+        const current = await fetchAnalyticsWeek(keys.current, "full");
+        if (cancelled) return;
+
+        setStatus("Loading prior week…");
+        const prior = await fetchAnalyticsWeek(keys.prior, "full");
         if (cancelled) return;
 
         setStatus("Loading prior year…");
-        const [priorYear, decline2, decline3] = await Promise.all([
-          fetchAnalyticsWeekMerged(keys.priorYear, "sales", locationIds),
-          fetchAnalyticsWeekMerged(keys.decline2, "sales", locationIds),
-          fetchAnalyticsWeekMerged(keys.decline3, "sales", locationIds),
-        ]);
+        const priorYear = await fetchAnalyticsWeek(keys.priorYear, "sales");
+        if (cancelled) return;
+
+        setStatus("Loading trend context…");
+        const decline2 = await fetchAnalyticsWeek(keys.decline2, "sales");
+        if (cancelled) return;
+        const decline3 = await fetchAnalyticsWeek(keys.decline3, "sales");
         if (cancelled) return;
 
         const weeks: Record<string, AnalyticsWeekPayload> = {
@@ -95,7 +76,7 @@ export function WeeklyPerformanceData({ weekParam, locationIds }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [weekParam, locationIds]);
+  }, [weekParam]);
 
   if (error) {
     return (

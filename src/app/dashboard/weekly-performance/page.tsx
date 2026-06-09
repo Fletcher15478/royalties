@@ -8,7 +8,6 @@ import {
   parseWeekParam,
   weekLabelFromMondayYmd,
 } from "@/lib/dates/weekRange";
-import { getAnalyticsLocations } from "@/lib/analytics/locations";
 import { readSessionFromCookies } from "@/lib/auth/session";
 import { displayNameForEmail } from "@/lib/auth/displayName";
 
@@ -28,7 +27,6 @@ export default async function WeeklyPerformancePage({
   const prevWeekParam = formatWeekParam(addDays(range.weekStart, -7));
   const nextWeekParam = formatWeekParam(addDays(range.weekStart, 7));
   const weekLabel = weekLabelFromMondayYmd(weekParam);
-  const locationIds = getAnalyticsLocations().map((l) => l.id);
 
   return (
     <main className="mx-auto w-full max-w-7xl px-4 py-10">
@@ -56,7 +54,7 @@ export default async function WeeklyPerformancePage({
         </div>
       </div>
 
-      <WeeklyPerformanceData weekParam={weekParam} locationIds={locationIds} />
+      <WeeklyPerformanceData weekParam={weekParam} />
     </main>
   );
 }

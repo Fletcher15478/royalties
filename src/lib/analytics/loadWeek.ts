@@ -44,20 +44,28 @@ export async function loadAnalyticsLocationWeek(
   detail: AnalyticsWeekDetail
 ): Promise<AnalyticsWeekPayload> {
   const range = weekRangeFromMondayYmd(weekStartYmd);
-  const weeklyDetail = await getLocationWeeklyDetail(locationId, range, {
-    timeZone: TZ,
-    forceSquare: true,
-  });
+
+  if (detail === "sales") {
+    const weeklyDetail = await getLocationWeeklyDetail(locationId, range, {
+      timeZone: TZ,
+      forceSquare: true,
+    });
+    return {
+      weekStartYmd,
+      detail,
+      salesByLocation: { [locationId]: snapshotFromDetail(locationId, weeklyDetail) },
+    };
+  }
+
+  const [weeklyDetail, orders] = await Promise.all([
+    getLocationWeeklyDetail(locationId, range, { timeZone: TZ, forceSquare: true }),
+    fetchAnalyticsOrders([locationId], range),
+  ]);
 
   const salesByLocation: Record<string, LocationSalesSnapshot> = {
     [locationId]: snapshotFromDetail(locationId, weeklyDetail),
   };
 
-  if (detail === "sales") {
-    return { weekStartYmd, detail, salesByLocation };
-  }
-
-  const orders = await fetchAnalyticsOrders([locationId], range);
   const inStoreOrders = orders.filter((o) => !shouldExcludeFromInStoreSales(o, locationId));
   const agg = aggregateAnalyticsWeek(inStoreOrders, [locationId]);
   const products = agg.productsByLocation.get(locationId);

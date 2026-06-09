@@ -10,11 +10,36 @@ export type SearchOrdersParams = {
   deliveryOnly?: boolean;
 };
 
+/** Square SearchOrders accepts at most 10 location IDs per request. */
+const MAX_LOCATION_IDS_PER_SEARCH = 10;
+
+function chunkLocationIds(locationIds: string[]): string[][] {
+  if (locationIds.length <= MAX_LOCATION_IDS_PER_SEARCH) return [locationIds];
+  const chunks: string[][] = [];
+  for (let i = 0; i < locationIds.length; i += MAX_LOCATION_IDS_PER_SEARCH) {
+    chunks.push(locationIds.slice(i, i + MAX_LOCATION_IDS_PER_SEARCH));
+  }
+  return chunks;
+}
+
 /**
  * Square Orders API SearchOrders for a closed-at window.
  * Pagination is handled internally; optional filter keeps only 3P delivery channels.
+ * Automatically batches when more than 10 location IDs are provided.
  */
 export async function searchOrdersInRange(params: SearchOrdersParams): Promise<any[]> {
+  const chunks = chunkLocationIds(params.locationIds);
+  if (chunks.length === 1) {
+    return searchOrdersInRangeOnce(params);
+  }
+
+  const results = await Promise.all(
+    chunks.map((locationIds) => searchOrdersInRangeOnce({ ...params, locationIds }))
+  );
+  return results.flat();
+}
+
+async function searchOrdersInRangeOnce(params: SearchOrdersParams): Promise<any[]> {
   const square = getSquareClient();
   const all: any[] = [];
   let cursor: string | undefined;

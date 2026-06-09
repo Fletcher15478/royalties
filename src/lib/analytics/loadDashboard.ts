@@ -21,7 +21,7 @@ import type {
 } from "@/lib/analytics/types";
 
 const TZ = "America/New_York";
-const TREND_WEEK_COUNT = 10;
+const TREND_WEEK_COUNT = 8;
 
 function weekRangeFromMondayYmd(mondayYmd: string): WeekRange {
   const anchor = new Date(`${mondayYmd}T12:00:00.000Z`);
@@ -78,12 +78,15 @@ async function loadWeeklyPerformanceDashboardUncached(weekStartYmd: string): Pro
   );
   const uniqueTrendMondays = trendMondays.filter((m) => m !== weekStartYmd && m !== priorMonday);
 
-  const [currentOrders, priorOrders, priorYearOrders, extraTrendOrderBatches] = await Promise.all([
+  const [currentOrders, priorOrders, priorYearOrders] = await Promise.all([
     fetchAnalyticsOrders(locationIds, currentRange),
     fetchAnalyticsOrders(locationIds, priorRange),
     fetchAnalyticsOrders(locationIds, priorYearRange),
-    mapLimit(uniqueTrendRanges, 3, (range) => fetchAnalyticsOrders(locationIds, range)),
   ]);
+
+  const extraTrendOrderBatches = await mapLimit(uniqueTrendRanges, 2, (range) =>
+    fetchAnalyticsOrders(locationIds, range)
+  );
 
   const currentAgg = aggregateAnalyticsWeek(currentOrders, locationIds);
   const priorAgg = aggregateAnalyticsWeek(priorOrders, locationIds);
@@ -193,7 +196,17 @@ async function loadWeeklyPerformanceDashboardUncached(weekStartYmd: string): Pro
   const topFlavorName = currentAgg.companyFlavors[0]?.name ?? null;
 
   const trends: TrendWeek[] = trendMondays.map((m) => {
-    const agg = trendAggByMonday.get(m)!;
+    const agg = trendAggByMonday.get(m);
+    if (!agg) {
+      return {
+        weekStartYmd: m,
+        weekLabel: weekLabelFromMondayYmd(m),
+        grossSales: 0,
+        netSales: 0,
+        byLocation: {},
+        topFlavorUnits: {},
+      };
+    }
     const byLocation: Record<string, { grossSales: number; netSales: number }> = {};
     for (const id of locationIds) {
       const snap = salesSnapshotFromMap(agg.salesByLocation, id);

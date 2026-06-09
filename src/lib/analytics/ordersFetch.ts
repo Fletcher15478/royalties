@@ -2,6 +2,9 @@ import { searchOrdersInRange } from "@/lib/square/delivery/searchOrders";
 import { toIsoNoMillis, type WeekRange } from "@/lib/dates/weekRange";
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
+/** Square SearchOrders allows at most 10 location IDs per request. */
+const SQUARE_LOCATION_BATCH_SIZE = 10;
+
 const orderCache = new Map<string, { at: number; orders: any[] }>();
 
 function cacheKey(locationIds: string[], range: WeekRange): string {
@@ -9,9 +12,17 @@ function cacheKey(locationIds: string[], range: WeekRange): string {
   return `${ids}|${toIsoNoMillis(range.weekStart)}|${toIsoNoMillis(range.weekEnd)}`;
 }
 
+function chunkLocationIds(locationIds: string[]): string[][] {
+  const chunks: string[][] = [];
+  for (let i = 0; i < locationIds.length; i += SQUARE_LOCATION_BATCH_SIZE) {
+    chunks.push(locationIds.slice(i, i + SQUARE_LOCATION_BATCH_SIZE));
+  }
+  return chunks;
+}
+
 /**
- * Fetch completed orders for many locations in a single Square search stream.
- * Results are cached briefly to speed week navigation during a session.
+ * Fetch completed orders for many locations. Square caps each search at 10 location IDs,
+ * so requests are batched and merged automatically.
  */
 export async function fetchAnalyticsOrders(
   locationIds: string[],
@@ -23,12 +34,15 @@ export async function fetchAnalyticsOrders(
     return hit.orders;
   }
 
-  const orders = await searchOrdersInRange({
-    locationIds,
-    startAt: toIsoNoMillis(range.weekStart),
-    endAt: toIsoNoMillis(range.weekEnd),
-  });
+  const startAt = toIsoNoMillis(range.weekStart);
+  const endAt = toIsoNoMillis(range.weekEnd);
+  const chunks = chunkLocationIds(locationIds);
 
+  const batchResults = await mapLimit(chunks, 2, (ids) =>
+    searchOrdersInRange({ locationIds: ids, startAt, endAt })
+  );
+
+  const orders = batchResults.flat();
   orderCache.set(key, { at: Date.now(), orders });
   return orders;
 }

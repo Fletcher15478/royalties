@@ -48,6 +48,42 @@ export type WeekAggregation = {
   companyFlavors: FlavorAggregate[];
 };
 
+export type SalesWeekAggregation = {
+  salesByLocation: Map<string, LocationSalesSnapshot>;
+};
+
+/** Order-level totals only — faster for comparison and trend weeks. */
+export function aggregateSalesWeek(orders: any[], locationIds: string[]): SalesWeekAggregation {
+  const idSet = new Set(locationIds);
+  const salesByLocation = new Map<string, LocationSalesSnapshot>();
+
+  for (const id of locationIds) {
+    salesByLocation.set(id, emptySales(id));
+  }
+
+  for (const order of orders) {
+    const locationId = String(order?.locationId ?? order?.location_id ?? "");
+    if (!idSet.has(locationId)) continue;
+
+    const sales = salesByLocation.get(locationId)!;
+    sales.ordersCount += 1;
+
+    const grossCents = moneyToCents(order?.totalGrossSalesMoney ?? order?.total_gross_sales_money);
+    const fallbackGross = moneyToCents(order?.totalMoney ?? order?.total_money);
+    const discountCents = moneyToCents(order?.totalDiscountMoney ?? order?.total_discount_money);
+    const refundCents = moneyToCents(order?.totalRefundedMoney ?? order?.total_refunded_money);
+    const orderGross = grossCents || fallbackGross;
+    const orderNet = orderGross - discountCents - refundCents;
+
+    sales.grossSales += centsToDollars(orderGross);
+    sales.discounts += centsToDollars(discountCents);
+    sales.refunds += centsToDollars(refundCents);
+    sales.netSales += centsToDollars(orderNet);
+  }
+
+  return { salesByLocation };
+}
+
 /**
  * Executive analytics aggregation from Square orders — independent of royalty math.
  */

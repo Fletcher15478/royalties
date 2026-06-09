@@ -14,8 +14,8 @@ export default function WeeklyPerformanceError({
       <div className="rounded-2xl border border-red-200 bg-red-50 p-6 shadow-sm">
         <h1 className="text-lg font-semibold text-red-900">Could not load weekly performance</h1>
         <p className="mt-2 text-sm text-red-800">
-          Square data took too long or failed to load. This page pulls several weeks of orders across all locations,
-          so it can time out on a slow connection or during heavy Square API load.
+          The page shell failed to render. Analytics data loads separately via short API requests — try refreshing,
+          or return to the royalties dashboard and open weekly performance again.
         </p>
         {error.message ? (
           <p className="mt-3 rounded-lg bg-white/70 px-3 py-2 font-mono text-xs text-red-900">{error.message}</p>

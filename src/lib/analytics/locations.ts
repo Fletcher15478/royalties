@@ -1,16 +1,11 @@
 import { MILLIES_LOCATIONS, type MilliesLocation } from "@/lib/locations/millies";
 
-/** Non-retail / admin Square locations excluded from executive analytics. */
-const ANALYTICS_EXCLUDED_IDS = new Set([
-  "LHSJEKAJZ9YC3", // Franchising - Homestead Office
-]);
-
 /**
- * Retail Millie's locations for the executive sales dashboard.
- * Uses the shared location registry without royalty dashboard filters.
+ * Active franchise retail locations for executive analytics.
+ * Matches the royalties dashboard set — excludes Main, campus kiosks, mall shops, and admin offices.
  */
 export function getAnalyticsLocations(): MilliesLocation[] {
-  return MILLIES_LOCATIONS.filter((l) => !ANALYTICS_EXCLUDED_IDS.has(l.id));
+  return MILLIES_LOCATIONS.filter((l) => l.includeInRoyaltiesDashboard !== false);
 }
 
 export function analyticsLocationName(locationId: string, fallback?: string): string {

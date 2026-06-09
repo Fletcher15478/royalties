@@ -192,7 +192,14 @@ export function WeeklyPerformanceData({ weekParam }: Props) {
       <section className="mt-8">
         <SectionHeader title="Product performance by location" subtitle="Top flavor and top menu item this week" />
         <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {data.locations.map((row) => (
+          {data.locations.filter(
+            (row) => row.netSales > 0 && (row.topFlavor != null || row.topItem != null)
+          ).length === 0 ? (
+            <p className="text-sm text-zinc-600">No product mix data for this week.</p>
+          ) : null}
+          {data.locations
+            .filter((row) => row.netSales > 0 && (row.topFlavor != null || row.topItem != null))
+            .map((row) => (
             <div key={row.locationId} className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
               <h3 className="font-semibold text-zinc-900">{row.locationName}</h3>
               <div className="mt-3 space-y-3 text-sm">

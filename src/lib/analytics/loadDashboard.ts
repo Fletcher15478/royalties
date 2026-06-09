@@ -1,22 +1,17 @@
-import { cache } from "react";
-import { composeWeeklyPerformanceDashboard } from "@/lib/analytics/composeDashboard";
-import { loadAnalyticsWeek } from "@/lib/analytics/loadWeek";
+import { loadAnalyticsWeekMerged } from "@/lib/analytics/loadWeek";
 import { getDashboardWeekKeys } from "@/lib/analytics/weekUtils";
-import type { WeeklyPerformanceDashboard } from "@/lib/analytics/types";
+import { composeWeeklyPerformanceDashboard } from "@/lib/analytics/composeDashboard";
+import { cache } from "react";
 
-/**
- * Loads the full dashboard in one server request (may timeout on Vercel).
- * Prefer the client-driven `/api/analytics/week` flow used by the dashboard page.
- */
-async function loadWeeklyPerformanceDashboardUncached(weekStartYmd: string): Promise<WeeklyPerformanceDashboard> {
+async function loadWeeklyPerformanceDashboardUncached(weekStartYmd: string) {
   const keys = getDashboardWeekKeys(weekStartYmd);
 
   const [current, prior, priorYear, decline2, decline3] = await Promise.all([
-    loadAnalyticsWeek(keys.current, "full"),
-    loadAnalyticsWeek(keys.prior, "full"),
-    loadAnalyticsWeek(keys.priorYear, "sales"),
-    loadAnalyticsWeek(keys.decline2, "sales"),
-    loadAnalyticsWeek(keys.decline3, "sales"),
+    loadAnalyticsWeekMerged(keys.current, "full"),
+    loadAnalyticsWeekMerged(keys.prior, "full"),
+    loadAnalyticsWeekMerged(keys.priorYear, "sales"),
+    loadAnalyticsWeekMerged(keys.decline2, "sales"),
+    loadAnalyticsWeekMerged(keys.decline3, "sales"),
   ]);
 
   return composeWeeklyPerformanceDashboard(weekStartYmd, keys, {

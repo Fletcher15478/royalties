@@ -6,24 +6,46 @@ import { PctBadge } from "@/components/analytics/PctBadge";
 import { WeeklyPerformanceCharts } from "@/components/analytics/WeeklyPerformanceCharts";
 import { dollars, pct } from "@/components/analytics/format";
 import { composeWeeklyPerformanceDashboard } from "@/lib/analytics/composeDashboard";
-import type { AnalyticsWeekPayload } from "@/lib/analytics/loadWeek";
+import { mergeLocationWeekPayloads, type AnalyticsWeekPayload } from "@/lib/analytics/loadWeek";
 import { getDashboardWeekKeys } from "@/lib/analytics/weekUtils";
 import type { WeeklyPerformanceDashboard } from "@/lib/analytics/types";
 
-async function fetchAnalyticsWeek(week: string, detail: "full" | "sales"): Promise<AnalyticsWeekPayload> {
-  const res = await fetch(`/api/analytics/week?week=${week}&detail=${detail}`, { credentials: "include" });
+async function fetchLocationWeek(
+  week: string,
+  locationId: string,
+  detail: "full" | "sales"
+): Promise<AnalyticsWeekPayload> {
+  const res = await fetch(
+    `/api/analytics/location-week?week=${week}&locationId=${locationId}&detail=${detail}`,
+    { credentials: "include" }
+  );
   const json = await res.json();
   if (!res.ok || !json.ok) {
-    throw new Error(json.error ?? `Failed to load week ${week}`);
+    throw new Error(json.error ?? `Failed to load ${locationId} for week ${week}`);
   }
   return json;
 }
 
+async function fetchAnalyticsWeekMerged(
+  week: string,
+  detail: "full" | "sales",
+  locationIds: string[]
+): Promise<AnalyticsWeekPayload> {
+  const parts: AnalyticsWeekPayload[] = [];
+  for (let i = 0; i < locationIds.length; i += 3) {
+    const batch = locationIds.slice(i, i + 3);
+    const batchParts = await Promise.all(batch.map((id) => fetchLocationWeek(week, id, detail)));
+    parts.push(...batchParts);
+  }
+  return mergeLocationWeekPayloads(week, detail, parts);
+}
+
 type Props = {
   weekParam: string;
+  locationIds: string[];
 };
 
-export function WeeklyPerformanceData({ weekParam }: Props) {
+export function WeeklyPerformanceData({ weekParam, locationIds }: Props) {
   const [data, setData] = useState<WeeklyPerformanceDashboard | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState("Loading current and prior week…");
@@ -34,22 +56,22 @@ export function WeeklyPerformanceData({ weekParam }: Props) {
     async function load() {
       setData(null);
       setError(null);
-      setStatus("Loading current and prior week…");
+      setStatus("Loading current week (in-store sales per location)…");
 
       try {
         const keys = getDashboardWeekKeys(weekParam);
 
         const [current, prior] = await Promise.all([
-          fetchAnalyticsWeek(keys.current, "full"),
-          fetchAnalyticsWeek(keys.prior, "full"),
+          fetchAnalyticsWeekMerged(keys.current, "full", locationIds),
+          fetchAnalyticsWeekMerged(keys.prior, "full", locationIds),
         ]);
         if (cancelled) return;
 
-        setStatus("Loading prior year and trend context…");
+        setStatus("Loading prior year…");
         const [priorYear, decline2, decline3] = await Promise.all([
-          fetchAnalyticsWeek(keys.priorYear, "sales"),
-          fetchAnalyticsWeek(keys.decline2, "sales"),
-          fetchAnalyticsWeek(keys.decline3, "sales"),
+          fetchAnalyticsWeekMerged(keys.priorYear, "sales", locationIds),
+          fetchAnalyticsWeekMerged(keys.decline2, "sales", locationIds),
+          fetchAnalyticsWeekMerged(keys.decline3, "sales", locationIds),
         ]);
         if (cancelled) return;
 
@@ -73,7 +95,7 @@ export function WeeklyPerformanceData({ weekParam }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [weekParam]);
+  }, [weekParam, locationIds]);
 
   if (error) {
     return (
@@ -149,7 +171,7 @@ export function WeeklyPerformanceData({ weekParam }: Props) {
 
       <section className="mt-8 overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm">
         <div className="border-b border-zinc-200 px-5 py-4">
-          <SectionHeader title="Location performance" subtitle="Sorted by gross sales. WoW and YoY compare net sales." inline />
+          <SectionHeader title="Location performance" subtitle="In-store net sales (excludes DoorDash/Uber/Grubhub). Sorted by gross. WoW and YoY compare net." inline />
         </div>
         <div className="overflow-x-auto">
           <table className="min-w-full text-sm">

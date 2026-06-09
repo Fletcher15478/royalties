@@ -31,7 +31,7 @@ function shortWeek(label: string) {
 }
 
 async function fetchSalesWeek(week: string): Promise<AnalyticsWeekPayload> {
-  const res = await fetch(`/api/analytics/week?week=${week}&detail=sales`, { credentials: "include" });
+  const res = await fetch(`/api/analytics/trend-week?week=${week}`, { credentials: "include" });
   const json = await res.json();
   if (!res.ok || !json.ok) throw new Error(json.error ?? "Failed to load trend week");
   return json;

@@ -95,6 +95,12 @@ export default async function DashboardPage({
           <p className="text-sm text-zinc-700">
             {displayName ? `Welcome ${displayName}. ` : ""}Monday 12:00am → Sunday 11:59pm (reporting week)
           </p>
+          <Link
+            href={`/dashboard/weekly-performance?week=${weekParam}`}
+            className="mt-3 inline-flex rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm font-semibold text-zinc-900 transition-colors hover:bg-zinc-50"
+          >
+            Weekly performance dashboard →
+          </Link>
         </div>
         <DashboardWeekNav
           basePath="/dashboard"

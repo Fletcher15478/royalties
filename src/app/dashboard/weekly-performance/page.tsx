@@ -1,15 +1,20 @@
 import Link from "next/link";
 import { addDays } from "date-fns";
+import { formatInTimeZone } from "date-fns-tz";
 import { DashboardWeekNav } from "@/components/DashboardWeekNav";
 import { WeeklyPerformanceData } from "@/components/analytics/WeeklyPerformanceData";
 import {
-  formatWeekParam,
   getWeekRangeMondayToMondayInTimeZone,
   parseWeekParam,
   weekLabelFromMondayYmd,
 } from "@/lib/dates/weekRange";
 import { readSessionFromCookies } from "@/lib/auth/session";
 import { displayNameForEmail } from "@/lib/auth/displayName";
+
+const TZ = "America/New_York";
+function etMondayYmd(d: Date) {
+  return formatInTimeZone(d, TZ, "yyyy-MM-dd");
+}
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -22,10 +27,10 @@ export default async function WeeklyPerformancePage({
   const session = await readSessionFromCookies();
   const displayName = displayNameForEmail(session?.email);
   const anchor = parseWeekParam(searchParams?.week) ?? new Date();
-  const range = getWeekRangeMondayToMondayInTimeZone(anchor, "America/New_York");
-  const weekParam = formatWeekParam(range.weekStart);
-  const prevWeekParam = formatWeekParam(addDays(range.weekStart, -7));
-  const nextWeekParam = formatWeekParam(addDays(range.weekStart, 7));
+  const range = getWeekRangeMondayToMondayInTimeZone(anchor, TZ);
+  const weekParam = etMondayYmd(range.weekStart);
+  const prevWeekParam = etMondayYmd(addDays(range.weekStart, -7));
+  const nextWeekParam = etMondayYmd(addDays(range.weekStart, 7));
   const weekLabel = weekLabelFromMondayYmd(weekParam);
 
   return (

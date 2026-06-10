@@ -25,10 +25,9 @@ function weekRangeFromMondayYmd(mondayYmd: string): WeekRange {
 
 function loadLeadershipSalesSnapshotForWeek(
   locationId: string,
-  range: WeekRange,
-  weekStartYmd: string
+  range: WeekRange
 ): Promise<LocationSalesSnapshot> {
-  return loadLeadershipSalesSnapshot(locationId, range, weekStartYmd, TZ);
+  return loadLeadershipSalesSnapshot(locationId, range, TZ);
 }
 
 /** One location, one week — net sales aligned to the Monday leadership spreadsheet. */
@@ -40,7 +39,7 @@ export async function loadAnalyticsLocationWeek(
   const range = weekRangeFromMondayYmd(weekStartYmd);
 
   if (detail === "sales") {
-    const sales = await loadLeadershipSalesSnapshotForWeek(locationId, range, weekStartYmd);
+    const sales = await loadLeadershipSalesSnapshotForWeek(locationId, range);
     return {
       weekStartYmd,
       detail,
@@ -49,7 +48,7 @@ export async function loadAnalyticsLocationWeek(
   }
 
   const [sales, orders] = await Promise.all([
-    loadLeadershipSalesSnapshotForWeek(locationId, range, weekStartYmd),
+    loadLeadershipSalesSnapshotForWeek(locationId, range),
     fetchAnalyticsOrders([locationId], range),
   ]);
 
@@ -75,7 +74,7 @@ export async function loadAnalyticsTrendWeek(weekStartYmd: string): Promise<Anal
   const locations = getAnalyticsLocations();
   const range = weekRangeFromMondayYmd(weekStartYmd);
   const snapshots = await mapLimit(locations, 3, (loc) =>
-    loadLeadershipSalesSnapshotForWeek(loc.id, range, weekStartYmd)
+    loadLeadershipSalesSnapshotForWeek(loc.id, range)
   );
   return {
     weekStartYmd,

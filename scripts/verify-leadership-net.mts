@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { LEADERSHIP_WEEKLY_NET } from "../src/lib/analytics/leadershipWeeklyNet";
+import { LEADERSHIP_WEEKLY_NET, leadershipWeekKey } from "../src/lib/analytics/leadershipWeeklyNet";
 
 function loadEnvLocal() {
   const p = join(process.cwd(), ".env.local");
@@ -23,40 +23,42 @@ function loadEnvLocal() {
 loadEnvLocal();
 
 async function main() {
-  const { MILLIES_LOCATIONS } = await import("../src/lib/locations/millies");
   const { getAnalyticsLocations } = await import("../src/lib/analytics/locations");
   const { getWeekRangeMondayToMondayInTimeZone } = await import("../src/lib/dates/weekRange");
   const { loadLeadershipSalesSnapshot } = await import("../src/lib/analytics/leadershipNet");
 
-  const weekStartYmd = "2026-06-02";
-  const expected = LEADERSHIP_WEEKLY_NET[weekStartYmd];
+  const tz = "America/New_York";
+  const weekMonday = "2026-06-01";
+  const expected = LEADERSHIP_WEEKLY_NET[weekMonday];
   if (!expected) throw new Error("Missing expected week data");
 
-  const range = getWeekRangeMondayToMondayInTimeZone(new Date(`${weekStartYmd}T12:00:00.000Z`), "America/New_York");
-  const nameById = new Map(MILLIES_LOCATIONS.map((l) => [l.id, l.name]));
-  const locations = getAnalyticsLocations();
+  const range = getWeekRangeMondayToMondayInTimeZone(
+    new Date(`${weekMonday}T12:00:00.000Z`),
+    tz
+  );
+  const key = leadershipWeekKey(range, tz);
+  console.log("ET Monday key:", key);
+  if (key !== weekMonday) throw new Error(`Week key mismatch: ${key} !== ${weekMonday}`);
 
+  const locations = getAnalyticsLocations();
   let failures = 0;
   let total = 0;
 
   for (const loc of locations) {
     const sheet = expected[loc.id];
-    if (sheet == null) {
-      console.warn("WARN no spreadsheet row for", loc.name);
-      continue;
-    }
-    const snap = await loadLeadershipSalesSnapshot(loc.id, range, weekStartYmd, "America/New_York");
+    if (sheet == null) continue;
+    const snap = await loadLeadershipSalesSnapshot(loc.id, range, tz);
     total += snap.netSales;
     const delta = snap.netSales - sheet;
     const ok = Math.abs(delta) < 0.01;
     if (!ok) failures += 1;
     console.log(
-      `${ok ? "OK" : "FAIL"}\t${loc.name}\tsheet ${sheet}\tgot ${snap.netSales.toFixed(2)}\tΔ ${delta.toFixed(2)}`
+      `${ok ? "OK" : "FAIL"}\t${loc.name}\tsheet ${sheet}\tgot ${snap.netSales.toFixed(2)}`
     );
   }
 
   const sheetTotal = Object.values(expected).reduce((s, n) => s + n, 0);
-  console.log(`\nTotal sheet ${sheetTotal} computed ${total.toFixed(2)} Δ ${(total - sheetTotal).toFixed(2)}`);
+  console.log(`\nTotal sheet ${sheetTotal} got ${total.toFixed(2)}`);
   if (failures > 0) process.exit(1);
 }
 

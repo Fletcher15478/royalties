@@ -152,7 +152,7 @@ export function WeeklyPerformanceData({ weekParam }: Props) {
 
       <section className="mt-8 overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm">
         <div className="border-b border-zinc-200 px-5 py-4">
-          <SectionHeader title="Location performance" subtitle="Net sales match the Monday leadership spreadsheet (Square in-store plus DoorDash/Uber/Grubhub). Sorted by gross. WoW and YoY compare net." inline />
+          <SectionHeader title="Location performance" subtitle="Gross and net both include in-store Square plus DoorDash/Uber/Grubhub. Net matches the Monday leadership workbook. WoW and YoY compare net." inline />
         </div>
         <div className="overflow-x-auto">
           <table className="min-w-full text-sm">

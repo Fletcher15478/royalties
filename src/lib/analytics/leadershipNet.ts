@@ -1,12 +1,13 @@
 import type { WeekRange } from "@/lib/dates/weekRange";
 import { leadershipNetOverride } from "@/lib/analytics/leadershipWeeklyNet";
 import type { LocationSalesSnapshot } from "@/lib/analytics/types";
-import { loadLocationRoyaltyBundle } from "@/lib/royalties/locationBundle";
+import { aggregateDeliveryRecords } from "@/lib/square/delivery/aggregate";
+import { syncDeliveryRoyaltiesForLocation } from "@/lib/square/delivery/service";
 import { getLocationWeeklyDetail } from "@/lib/square/locationDetail";
 
 /**
  * Leadership workbook net = Square in-store net + third-party delivery net.
- * Uses workbook overrides when loaded for that ET week; otherwise live Square via royalty bundle.
+ * Gross is in-store gross + delivery merchandise gross so net never exceeds gross.
  */
 export async function loadLeadershipSalesSnapshot(
   locationId: string,
@@ -15,19 +16,19 @@ export async function loadLeadershipSalesSnapshot(
 ): Promise<LocationSalesSnapshot> {
   const override = leadershipNetOverride(range, timeZone, locationId);
 
-  const [detail, bundle] = await Promise.all([
+  const [detail, { records }] = await Promise.all([
     getLocationWeeklyDetail(locationId, range, { timeZone, forceSquare: true }),
-    override == null
-      ? loadLocationRoyaltyBundle({ locationId, range, timeZone })
-      : Promise.resolve(null),
+    syncDeliveryRoyaltiesForLocation({ locationId, range, timeZone }),
   ]);
+  const delivery = aggregateDeliveryRecords(records);
 
-  const netSales = override ?? bundle!.combinedNetSales;
+  const netSales = override ?? detail.netSales + delivery.netRoyaltyEligible;
+  const grossSales = detail.grossSales + delivery.grossSales;
 
   return {
     locationId,
     ordersCount: detail.ordersCount,
-    grossSales: detail.grossSales,
+    grossSales,
     discounts: detail.discounts,
     refunds: detail.refunds,
     netSales,

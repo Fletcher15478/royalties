@@ -41,5 +41,8 @@ export const ROYALTY_CONFIG_BY_LOCATION_ID: Record<string, RoyaltyConfig> = {
 
   // Truck WC (rate confirmed as 5%)
   LGHK54YYZZCNA: { owner: "HHT Frozen Holdings LLC", entity: "HHT Frozen Holdings LLC", royaltyRate: 0.05, techFee: 95 }, // Truck WC
+
+  // Paige2 LLC — Amherst (Buffalo)
+  L4MWABCPH8RSD: { owner: "Paige2 LLC", entity: "Paige2 LLC", royaltyRate: 0.05, techFee: 250 }, // Amherst
 };
 

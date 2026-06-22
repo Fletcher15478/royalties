@@ -33,5 +33,6 @@ export const MILLIES_LOCATIONS: MilliesLocation[] = [
   { name: "Giant Eagle - The Meridian", id: "LHK34R2VTWF87", flatFeeCents: 5814, includeInRoyaltiesDashboard: false },
   { name: "Franchising - Homestead Office", id: "LHSJEKAJZ9YC3", flatFeeCents: 5499, includeInRoyaltiesDashboard: false },
   { name: "Lubbock", id: "L9WPKVJZFGZS4", flatFeeCents: 5499 },
+  { name: "Amherst", id: "L4MWABCPH8RSD", flatFeeCents: 5814 }, // Buffalo, NY
 ];
 

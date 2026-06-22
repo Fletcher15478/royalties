@@ -158,13 +158,10 @@ export default async function LocationDashboardPage({
 
       <div className="mt-6 overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm">
         <div className="border-b border-zinc-200 px-5 py-4">
-          <h2 className="text-sm font-semibold text-zinc-900">Gift card activity</h2>
+          <h2 className="text-sm font-semibold text-zinc-900">Gift card activity this week</h2>
+          <p className="mt-1 text-xs text-zinc-600">Weekly activated and redeemed only. Monthly gift-card reconciliation is handled separately.</p>
         </div>
-        <div className="grid grid-cols-1 gap-0 sm:grid-cols-3">
-          <div className="p-5 sm:border-r sm:border-zinc-200">
-            <div className="text-xs font-medium text-zinc-600">Sold (Deferred sales)</div>
-            <div className="mt-1 text-lg font-semibold text-zinc-900">{dollars(detail.giftCardActivity.sold)}</div>
-          </div>
+        <div className="grid grid-cols-1 gap-0 sm:grid-cols-2">
           <div className="p-5 sm:border-r sm:border-zinc-200">
             <div className="text-xs font-medium text-zinc-600">Activated</div>
             <div className="mt-1 text-lg font-semibold text-zinc-900">{dollars(detail.giftCardActivity.activated)}</div>
@@ -173,23 +170,6 @@ export default async function LocationDashboardPage({
             <div className="text-xs font-medium text-zinc-600">Redeemed</div>
             <div className="mt-1 text-lg font-semibold text-zinc-900">{dollars(detail.giftCardActivity.redeemed)}</div>
           </div>
-        </div>
-        <div className="grid grid-cols-1 gap-0 border-t border-zinc-200 sm:grid-cols-2">
-          <div className="p-5 sm:border-r sm:border-zinc-200">
-            <div className="text-xs font-medium text-zinc-600">Commission (on sold)</div>
-            <div className="mt-1 text-lg font-semibold text-zinc-900">
-              {detail.giftCardActivity.commission != null ? dollars(detail.giftCardActivity.commission) : "—"}
-            </div>
-          </div>
-          <div className="p-5">
-            <div className="text-xs font-medium text-zinc-600">Load fees (~2.5% of activated)</div>
-            <div className="mt-1 text-lg font-semibold text-zinc-900">
-              {detail.giftCardActivity.loadFees != null ? dollars(detail.giftCardActivity.loadFees) : "—"}
-            </div>
-          </div>
-        </div>
-        <div className="border-t border-zinc-200 px-5 py-3 text-xs text-zinc-600">
-          Activated can differ from sold (e.g. donations). Commission is 5% of sold; load fee is 2.5% of sold (HQ gift-card workbook).
         </div>
       </div>
 

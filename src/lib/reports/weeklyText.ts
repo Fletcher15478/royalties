@@ -3,7 +3,6 @@ import { formatInTimeZone, fromZonedTime } from "date-fns-tz";
 import { MILLIES_LOCATIONS } from "@/lib/locations/millies";
 import { getWeekRangeMondayToMondayInTimeZone, type WeekRange } from "@/lib/dates/weekRange";
 import { ROYALTY_CONFIG_BY_LOCATION_ID } from "@/lib/royalties/config";
-import type { GiftCardPriorMonthReconciliation } from "@/lib/reports/types";
 import type { DeliveryRoyaltyRecord } from "@/lib/square/delivery/types";
 import { loadLocationRoyaltyBundle } from "@/lib/royalties/locationBundle";
 import { formatDeliveryReportSummary, formatLocationDeliverySection } from "@/lib/reports/deliveryText";
@@ -32,6 +31,7 @@ function entityDisplayName(entity: string) {
   if (entity === "JACO Builders LLC") return "JACO Builders";
   if (entity === "ICETeen Corp") return "Teen";
   if (entity === "Happy Penguin, LLC") return "Happy Penguin";
+  if (entity === "Paige2 LLC") return "Paige2";
   return entity;
 }
 
@@ -52,29 +52,6 @@ function techFeeBannerMonthEt(weekMondayYmdEt: string, tz: string): string {
     }
   }
   return "April";
-}
-
-function priorMonthGcReconciliationLines(g: GiftCardPriorMonthReconciliation): string[] {
-  const lines: string[] = [];
-  let n = 1;
-  lines.push(`  ${n++}. Value Activated: ${money(g.valueActivated)}`);
-  lines.push(`  ${n++}. Less Value Redeemed: ${money(g.valueRedeemed)}`);
-  lines.push(
-    `  ${n++}. Less Commission (on ${money(g.commissionOnSoldDollars ?? 0)} Sold): ${money(g.commissionAmount ?? 0)}`
-  );
-  if (g.loadFeesAmount != null) {
-    lines.push(`  ${n++}. Less Gift Card Load Fees: ${money(g.loadFeesAmount)}`);
-  }
-  lines.push(`  ${n}. Equals: ${money(g.equalsAmount)}`);
-
-  const out = [`${g.monthLabel} Gift Card Reconciliation:`, ...lines];
-  if (g.amountDueToFranchisee != null) {
-    out.push(`Amount due to franchisee: ${money(g.amountDueToFranchisee)}`);
-  }
-  if (g.amountDueToHQ != null) {
-    out.push(`Amount due to Millie's HQ: ${money(g.amountDueToHQ)}`);
-  }
-  return out;
 }
 
 export async function buildWeeklyTextReport(params: { weekStartYmd: string; timeZone?: string }) {
@@ -189,51 +166,12 @@ export async function buildWeeklyTextReport(params: { weekStartYmd: string; time
       }
 
       const gc = d.giftCardActivity;
-      const showGc =
-        (gc?.activated ?? 0) !== 0 ||
-        (gc?.sold ?? 0) !== 0 ||
-        (gc?.redeemed ?? 0) !== 0 ||
-        (gc?.commission ?? 0) !== 0 ||
-        (gc?.loadFees ?? 0) !== 0;
+      const showGc = (gc?.activated ?? 0) !== 0 || (gc?.redeemed ?? 0) !== 0;
 
       if (showGc) {
         lines.push(`Gift Card Activity This Week:`);
-        // Square Sales Summary: Deferred sales (“sold”) + Gift card redeemed; Gift Card Activity: activations & load fees
-        if ((gc?.sold ?? 0) !== 0) lines.push(`  Sold (Deferred sales): ${money(gc.sold)}`);
-        if ((gc?.activated ?? 0) !== 0) lines.push(`  Activated (GC activity report): ${money(gc.activated)}`);
+        if ((gc?.activated ?? 0) !== 0) lines.push(`  Activated: ${money(gc.activated)}`);
         if ((gc?.redeemed ?? 0) !== 0) lines.push(`  Redeemed: ${money(gc.redeemed)}`);
-        if ((gc?.sold ?? 0) !== 0 && gc.commission != null) {
-          lines.push(`  Commission (on Sold): ${money(gc.commission)}`);
-        }
-        if ((gc?.sold ?? 0) !== 0 && gc.loadFees != null) {
-          lines.push(`  Load Fees (2.5% of Sold, workbook): ${money(gc.loadFees)}`);
-        }
-        lines.push("");
-      }
-
-      const gcMonth = d.giftCardCalendarMonth;
-      const recon = d.giftCardPriorMonthReconciliation;
-      const skipCalendarDup =
-        gcMonth && recon && gcMonth.monthLabel === recon.monthLabel;
-      if (gcMonth && !skipCalendarDup) {
-        const gm = gcMonth.activity;
-        lines.push(`${gcMonth.monthLabel} Gift Card Activity:`);
-        if ((gm?.sold ?? 0) !== 0) lines.push(`  Sold (Deferred sales): ${money(gm.sold)}`);
-        if ((gm?.activated ?? 0) !== 0) lines.push(`  Activated (GC activity report): ${money(gm.activated)}`);
-        if ((gm?.redeemed ?? 0) !== 0) lines.push(`  Redeemed: ${money(gm.redeemed)}`);
-        if ((gm?.sold ?? 0) !== 0 && gm.commission != null) {
-          lines.push(`  Commission (on Sold): ${money(gm.commission)}`);
-        }
-        if ((gm?.sold ?? 0) !== 0 && gm.loadFees != null) {
-          lines.push(`  Load Fees (2.5% of Sold, workbook): ${money(gm.loadFees)}`);
-        }
-        lines.push("");
-      }
-
-      if (recon) {
-        for (const L of priorMonthGcReconciliationLines(recon)) {
-          lines.push(L);
-        }
         lines.push("");
       }
 
